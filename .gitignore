@@ -1,0 +1,26 @@
+# 密钥与配置
+.env
+.env.*
+
+# 运行时状态
+state/
+backups/
+*.log
+*.pid
+
+# 虚拟环境
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# 编辑器和系统
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# 备份文件
+*.bak
+*.bak.*

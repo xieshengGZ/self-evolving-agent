@@ -1,0 +1,10 @@
+/my_agent/agent-services/state/service.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su ubuntu ubuntu
+}

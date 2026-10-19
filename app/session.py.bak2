@@ -1,0 +1,182 @@
+import json
+import os
+import threading
+import time
+from typing import Any, Dict, List, Optional
+
+from app import config
+
+STATE_DIR = os.path.join(config.AGENT_ROOT, "state")
+SESSION_FILE = os.path.join(STATE_DIR, "session.json")
+
+
+class Session:
+    def __init__(self) -> None:
+        self.history: List[Dict[str, str]] = []
+        self.events: List[Dict[str, Any]] = []
+        self.status: str = "idle"
+        self.cancel_flag: bool = False
+        self.current_proc = None
+        self.lock = threading.RLock()
+
+    def add_event(self, kind: str, message: str, **extra: Any) -> None:
+        with self.lock:
+            event: Dict[str, Any] = {
+                "ts": time.time(),
+                "kind": kind,
+                "message": message,
+            }
+            if extra:
+                event.update(extra)
+            self.events.append(event)
+
+    def add_message(self, role: str, content: str) -> None:
+        with self.lock:
+            self.history.append({"role": role, "content": content})
+
+    def set_status(self, status: str) -> None:
+        with self.lock:
+            self.status = status
+
+    def request_cancel(self) -> None:
+        with self.lock:
+            self.cancel_flag = True
+        proc = self.current_proc
+        if proc is not None:
+            try:
+                import signal
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
+    def is_cancelled(self) -> bool:
+        with self.lock:
+            return self.cancel_flag
+
+    def reset_cancel(self) -> None:
+        with self.lock:
+            self.cancel_flag = False
+
+    def snapshot(self, since: int = 0) -> Dict[str, Any]:
+        with self.lock:
+            events = self.events[since:] if since >= 0 else self.events
+            return {
+                "status": self.status,
+                "history": list(self.history),
+                "events": list(events),
+                "event_count": len(self.events),
+            }
+
+    def to_dict(self) -> Dict[str, Any]:
+        with self.lock:
+            return {
+                "history": list(self.history),
+                "events": list(self.events),
+                "status": self.status,
+            }
+
+    def persist(self) -> None:
+        try:
+            os.makedirs(STATE_DIR, exist_ok=True)
+            data = self.to_dict()
+            tmp = SESSION_FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, SESSION_FILE)
+        except Exception:
+            pass
+
+    def load(self) -> None:
+        if not os.path.exists(SESSION_FILE):
+            return
+        try:
+            with open(SESSION_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            return
+        with self.lock:
+            self.history = data.get("history", []) or []
+            self.events = data.get("events", []) or []
+            status = data.get("status", "idle")
+            if status == "running":
+                self.status = "idle"
+                self.events.append(
+                    {
+                        "ts": time.time(),
+                        "kind": "system",
+                        "message": "上次运行被中断",
+                    }
+                )
+            else:
+                self.status = status if status in ("idle", "running") else "idle"
+
+
+# ---------------------------------------------------------------------------
+# 模块级单例 + 兼容包装
+# main.py 以 `from app import ... session` 方式导入，调用 session.xxx()。
+# 这里把常用方法转发到 _default 实例，避免 main.py 与 session.py 接口错位。
+# ---------------------------------------------------------------------------
+_default = Session()
+
+
+def init() -> None:
+    os.makedirs(STATE_DIR, exist_ok=True)
+    os.makedirs(os.path.join(config.AGENT_ROOT, "backups"), exist_ok=True)
+    _default.load()
+    _default.persist()
+
+
+def load() -> None:
+    _default.load()
+
+
+def persist() -> None:
+    _default.persist()
+
+
+def add_event(kind: str, message: str, **extra: Any) -> None:
+    _default.add_event(kind, message, **extra)
+
+
+def append_history(role: str, content: str) -> None:
+    _default.add_message(role, content)
+
+
+def get_history() -> List[Dict[str, str]]:
+    with _default.lock:
+        return list(_default.history)
+
+
+def get_events(since: int = 0) -> List[Dict[str, Any]]:
+    with _default.lock:
+        return list(_default.events[since:]) if since >= 0 else list(_default.events)
+
+
+def event_count() -> int:
+    with _default.lock:
+        return len(_default.events)
+
+
+def get_status() -> str:
+    with _default.lock:
+        return _default.status
+
+
+def set_status(status: str) -> None:
+    _default.set_status(status)
+
+
+def is_cancelled() -> bool:
+    return _default.is_cancelled()
+
+
+def request_cancel() -> None:
+    _default.request_cancel()
+
+
+def clear_cancel() -> None:
+    _default.reset_cancel()
+
