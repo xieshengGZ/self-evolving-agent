@@ -1,0 +1,2147 @@
+{
+  "generated_at": "2026-10-19T21:31:37+08:00",
+  "project_root": "/my_agent/agent-services",
+  "files": {
+    "app/__init__.py": {
+      "sha256": "38a17591ff2a",
+      "lines": 1,
+      "symbols": []
+    },
+    "app/_robust.py": {
+      "sha256": "42d53c72da39",
+      "lines": 174,
+      "symbols": [
+        {
+          "path": "app._robust._write_crash",
+          "name": "_write_crash",
+          "kind": "function",
+          "signature": "(text)",
+          "line_start": 12,
+          "line_end": 23,
+          "doc": "",
+          "calls": [
+            "makedirs",
+            "add_event",
+            "persist",
+            "dirname",
+            "open",
+            "write",
+            "isoformat",
+            "now"
+          ]
+        },
+        {
+          "path": "app._robust._install_hooks",
+          "name": "_install_hooks",
+          "kind": "function",
+          "signature": "()",
+          "line_start": 26,
+          "line_end": 34,
+          "doc": "",
+          "calls": [
+            "_write_crash",
+            "__excepthook__",
+            "join",
+            "hook",
+            "format_exception"
+          ]
+        },
+        {
+          "path": "app._robust._load_prev_crash",
+          "name": "_load_prev_crash",
+          "kind": "function",
+          "signature": "()",
+          "line_start": 37,
+          "line_end": 45,
+          "doc": "",
+          "calls": [
+            "exists",
+            "strip",
+            "open",
+            "add_event",
+            "read"
+          ]
+        },
+        {
+          "path": "app._robust._check_auth",
+          "name": "_check_auth",
+          "kind": "function",
+          "signature": "(authorization)",
+          "line_start": 48,
+          "line_end": 55,
+          "doc": "",
+          "calls": [
+            "split",
+            "HTTPException",
+            "strip",
+            "len",
+            "lower"
+          ]
+        },
+        {
+          "path": "app._robust._run_shell",
+          "name": "_run_shell",
+          "kind": "function",
+          "signature": "(cmd, timeout=120)",
+          "line_start": 58,
+          "line_end": 67,
+          "doc": "",
+          "calls": [
+            "run",
+            "str",
+            "type"
+          ]
+        },
+        {
+          "path": "app._robust.register",
+          "name": "register",
+          "kind": "function",
+          "signature": "(app)",
+          "line_start": 113,
+          "line_end": 145,
+          "doc": "",
+          "calls": [
+            "_install_hooks",
+            "post",
+            "get",
+            "_load_prev_crash",
+            "Header",
+            "_check_auth",
+            "strip",
+            "add_event",
+            "_run_shell",
+            "persist",
+            "start",
+            "json",
+            "HTTPException",
+            "sleep",
+            "_exit",
+            "dumps",
+            "Thread"
+          ]
+        },
+        {
+          "path": "app._robust.check_restart_allowed",
+          "name": "check_restart_allowed",
+          "kind": "function",
+          "signature": "()",
+          "line_start": 154,
+          "line_end": 174,
+          "doc": "返回 (ok, reason)。超过窗口内次数则拒绝。",
+          "calls": [
+            "time",
+            "append",
+            "len",
+            "makedirs",
+            "open",
+            "load",
+            "dirname",
+            "dump"
+          ]
+        }
+      ]
+    },
+    "app/actions.py": {
+      "sha256": "dd53058749d9",
+      "lines": 376,
+      "symbols": [
+        {
+          "path": "app.actions.is_dangerous_command",
+          "name": "is_dangerous_command",
+          "kind": "function",
+          "signature": "(command: str) -> Optional[str]",
+          "line_start": 45,
+          "line_end": 52,
+          "doc": "如果命令明显破坏性，返回命中的模式描述；否则返回 None。",
+          "calls": [
+            "zip",
+            "search"
+          ]
+        },
+        {
+          "path": "app.actions._timestamp",
+          "name": "_timestamp",
+          "kind": "function",
+          "signature": "() -> str",
+          "line_start": 59,
+          "line_end": 60,
+          "doc": "",
+          "calls": [
+            "str",
+            "int",
+            "time"
+          ]
+        },
+        {
+          "path": "app.actions.backup_file",
+          "name": "backup_file",
+          "kind": "function",
+          "signature": "(path: str) -> Optional[str]",
+          "line_start": 63,
+          "line_end": 75,
+          "doc": "把已存在的文件备份到 backups/<ts>/<相对路径>，返回备份路径；文件不存在返回 None。",
+          "calls": [
+            "abspath",
+            "_timestamp",
+            "join",
+            "lstrip",
+            "makedirs",
+            "copy2",
+            "exists",
+            "dirname"
+          ]
+        },
+        {
+          "path": "app.actions._truncate",
+          "name": "_truncate",
+          "kind": "function",
+          "signature": "(text: str, limit: int=20000) -> tuple[str, bool]",
+          "line_start": 82,
+          "line_end": 87,
+          "doc": "",
+          "calls": [
+            "len"
+          ]
+        },
+        {
+          "path": "app.actions._kill_process_group",
+          "name": "_kill_process_group",
+          "kind": "function",
+          "signature": "(proc: subprocess.Popen) -> None",
+          "line_start": 90,
+          "line_end": 97,
+          "doc": "",
+          "calls": [
+            "killpg",
+            "getpgid",
+            "kill"
+          ]
+        },
+        {
+          "path": "app.actions.do_shell",
+          "name": "do_shell",
+          "kind": "function",
+          "signature": "(command: str, timeout: Optional[int]=None) -> Dict[str, Any]",
+          "line_start": 100,
+          "line_end": 175,
+          "doc": "执行 shell 命令，返回结果字典。",
+          "calls": [
+            "is_dangerous_command",
+            "_truncate",
+            "int",
+            "Popen",
+            "set_current_process",
+            "communicate",
+            "bool",
+            "_kill_process_group",
+            "clear_current_process"
+          ]
+        },
+        {
+          "path": "app.actions.do_write_file",
+          "name": "do_write_file",
+          "kind": "function",
+          "signature": "(path: str, content: str) -> Dict[str, Any]",
+          "line_start": 178,
+          "line_end": 201,
+          "doc": "写整个文件，自动建父目录，写前备份原文件。",
+          "calls": [
+            "abspath",
+            "backup_file",
+            "dirname",
+            "len",
+            "makedirs",
+            "open",
+            "write",
+            "encode"
+          ]
+        },
+        {
+          "path": "app.actions.do_read_file",
+          "name": "do_read_file",
+          "kind": "function",
+          "signature": "(path: str, max_bytes: Optional[int]=None) -> Dict[str, Any]",
+          "line_start": 204,
+          "line_end": 238,
+          "doc": "读取文件，超过 max_bytes 截断。",
+          "calls": [
+            "abspath",
+            "isdir",
+            "decode",
+            "exists",
+            "len",
+            "int",
+            "open",
+            "read"
+          ]
+        },
+        {
+          "path": "app.actions.do_self_restart",
+          "name": "do_self_restart",
+          "kind": "function",
+          "signature": "(reason: str='') -> Dict[str, Any]",
+          "line_start": 241,
+          "line_end": 250,
+          "doc": "执行自更新流程。成功时进程会被 execv 替换，不会返回。",
+          "calls": [
+            "self_restart"
+          ]
+        },
+        {
+          "path": "app.actions.do_read_symbol",
+          "name": "do_read_symbol",
+          "kind": "function",
+          "signature": "(symbol: str='') -> Dict[str, Any]",
+          "line_start": 254,
+          "line_end": 271,
+          "doc": "按符号路径读取源码，返回 {ok, symbol, line_start, line_end, source}。",
+          "calls": [
+            "get_symbol_info",
+            "get",
+            "str"
+          ]
+        },
+        {
+          "path": "app.actions.do_read_file_summary",
+          "name": "do_read_file_summary",
+          "kind": "function",
+          "signature": "(path: str='') -> Dict[str, Any]",
+          "line_start": 274,
+          "line_end": 284,
+          "doc": "返回文件内所有符号的签名/行号/doc。",
+          "calls": [
+            "summarize_file",
+            "str"
+          ]
+        },
+        {
+          "path": "app.actions.do_rebuild_index",
+          "name": "do_rebuild_index",
+          "kind": "function",
+          "signature": "() -> Dict[str, Any]",
+          "line_start": 287,
+          "line_end": 301,
+          "doc": "重建 .index.json，返回统计信息。",
+          "calls": [
+            "get",
+            "build_index",
+            "str"
+          ]
+        },
+        {
+          "path": "app.actions.do_done",
+          "name": "do_done",
+          "kind": "function",
+          "signature": "(message: str='') -> Dict[str, Any]",
+          "line_start": 304,
+          "line_end": 305,
+          "doc": "",
+          "calls": []
+        },
+        {
+          "path": "app.actions.execute_action",
+          "name": "execute_action",
+          "kind": "function",
+          "signature": "(action: Dict[str, Any]) -> Dict[str, Any]",
+          "line_start": 312,
+          "line_end": 341,
+          "doc": "根据动作字典执行对应动作，返回结果字典。",
+          "calls": [
+            "get",
+            "isinstance",
+            "do_shell",
+            "do_write_file",
+            "do_read_file",
+            "do_self_restart",
+            "do_read_symbol",
+            "do_read_file_summary",
+            "do_rebuild_index",
+            "do_done"
+          ]
+        },
+        {
+          "path": "app.actions.parse_action",
+          "name": "parse_action",
+          "kind": "function",
+          "signature": "(text: str) -> Optional[Dict[str, Any]]",
+          "line_start": 344,
+          "line_end": 376,
+          "doc": "从模型输出中解析 JSON 动作。失败返回 None。",
+          "calls": [
+            "strip",
+            "startswith",
+            "find",
+            "rfind",
+            "splitlines",
+            "loads",
+            "isinstance",
+            "join"
+          ]
+        }
+      ]
+    },
+    "app/config.py": {
+      "sha256": "50b936676996",
+      "lines": 54,
+      "symbols": [
+        {
+          "path": "app.config._env",
+          "name": "_env",
+          "kind": "function",
+          "signature": "(name: str, default: str | None=None, required: bool=False) -> str",
+          "line_start": 5,
+          "line_end": 10,
+          "doc": "",
+          "calls": [
+            "get",
+            "write",
+            "exit"
+          ]
+        },
+        {
+          "path": "app.config.ensure_dirs",
+          "name": "ensure_dirs",
+          "kind": "function",
+          "signature": "() -> None",
+          "line_start": 36,
+          "line_end": 38,
+          "doc": "",
+          "calls": [
+            "makedirs"
+          ]
+        },
+        {
+          "path": "app.config.redact",
+          "name": "redact",
+          "kind": "function",
+          "signature": "(text: str) -> str",
+          "line_start": 41,
+          "line_end": 48,
+          "doc": "",
+          "calls": [
+            "replace"
+          ]
+        }
+      ]
+    },
+    "app/deepseek.py": {
+      "sha256": "105cc6b33b15",
+      "lines": 107,
+      "symbols": [
+        {
+          "path": "app.deepseek.DeepSeekError",
+          "name": "DeepSeekError",
+          "kind": "class",
+          "signature": "(Exception)",
+          "line_start": 10,
+          "line_end": 11,
+          "doc": "",
+          "calls": []
+        },
+        {
+          "path": "app.deepseek._extract_json",
+          "name": "_extract_json",
+          "kind": "function",
+          "signature": "(text: str) -> dict[str, Any]",
+          "line_start": 14,
+          "line_end": 59,
+          "doc": "从模型回复中提取第一个 JSON 对象。",
+          "calls": [
+            "strip",
+            "search",
+            "find",
+            "DeepSeekError",
+            "loads",
+            "isinstance",
+            "range",
+            "len",
+            "group"
+          ]
+        },
+        {
+          "path": "app.deepseek._redact",
+          "name": "_redact",
+          "kind": "function",
+          "signature": "(text: str) -> str",
+          "line_start": 62,
+          "line_end": 71,
+          "doc": "对疑似密钥值脱敏，避免进入日志。",
+          "calls": [
+            "sub",
+            "replace",
+            "len"
+          ]
+        },
+        {
+          "path": "app.deepseek.chat",
+          "name": "chat",
+          "kind": "function",
+          "signature": "(messages: list[dict[str, str]]) -> dict[str, Any]",
+          "line_start": 74,
+          "line_end": 107,
+          "doc": "调用 DeepSeek chat completions，返回解析后的 JSON 动作字典。",
+          "calls": [
+            "_extract_json",
+            "rstrip",
+            "_redact",
+            "DeepSeekError",
+            "json",
+            "isinstance",
+            "Client",
+            "post",
+            "str"
+          ]
+        }
+      ]
+    },
+    "app/main.py": {
+      "sha256": "d2d11de31593",
+      "lines": 360,
+      "symbols": [
+        {
+          "path": "app.main._extract_bearer",
+          "name": "_extract_bearer",
+          "kind": "function",
+          "signature": "(authorization: Optional[str]) -> Optional[str]",
+          "line_start": 22,
+          "line_end": 28,
+          "doc": "",
+          "calls": [
+            "split",
+            "strip",
+            "len",
+            "lower"
+          ]
+        },
+        {
+          "path": "app.main.require_token",
+          "name": "require_token",
+          "kind": "function",
+          "signature": "(authorization: Optional[str]=Header(default=None)) -> None",
+          "line_start": 31,
+          "line_end": 34,
+          "doc": "",
+          "calls": [
+            "Header",
+            "_extract_bearer",
+            "HTTPException"
+          ]
+        },
+        {
+          "path": "app.main.load_system_prompt",
+          "name": "load_system_prompt",
+          "kind": "function",
+          "signature": "() -> str",
+          "line_start": 48,
+          "line_end": 59,
+          "doc": "",
+          "calls": [
+            "join",
+            "open",
+            "strip",
+            "read"
+          ]
+        },
+        {
+          "path": "app.main.parse_action",
+          "name": "parse_action",
+          "kind": "function",
+          "signature": "(text: Any) -> Optional[Dict[str, Any]]",
+          "line_start": 65,
+          "line_end": 96,
+          "doc": "兼容 str 和 dict：DeepSeek 客户端若返回已解析的 dict，直接使用。",
+          "calls": [
+            "isinstance",
+            "startswith",
+            "sub",
+            "strip",
+            "find",
+            "loads",
+            "endswith",
+            "rstrip"
+          ]
+        },
+        {
+          "path": "app.main.execute_action",
+          "name": "execute_action",
+          "kind": "function",
+          "signature": "(action: Dict[str, Any]) -> Dict[str, Any]",
+          "line_start": 98,
+          "line_end": 122,
+          "doc": "",
+          "calls": [
+            "get",
+            "do_shell",
+            "do_write_file",
+            "do_read_file",
+            "do_self_restart",
+            "str",
+            "int",
+            "type"
+          ]
+        },
+        {
+          "path": "app.main._append_event",
+          "name": "_append_event",
+          "kind": "function",
+          "signature": "(kind: str, message: str) -> None",
+          "line_start": 128,
+          "line_end": 129,
+          "doc": "",
+          "calls": [
+            "add_event"
+          ]
+        },
+        {
+          "path": "app.main.agent_loop",
+          "name": "agent_loop",
+          "kind": "function",
+          "signature": "() -> None",
+          "line_start": 132,
+          "line_end": 260,
+          "doc": "自愈循环：每步 try/except，失败转 error 回传模型，有硬性上限。",
+          "calls": [
+            "time",
+            "_append_event",
+            "append_history",
+            "persist",
+            "is_cancelled",
+            "get",
+            "set_status",
+            "clear_cancel",
+            "dumps",
+            "load_system_prompt",
+            "build_messages",
+            "chat",
+            "parse_action",
+            "_fail",
+            "execute_action",
+            "str",
+            "check_restart_allowed",
+            "record_step",
+            "type",
+            "format_exc"
+          ]
+        },
+        {
+          "path": "app.main.index",
+          "name": "index",
+          "kind": "function",
+          "signature": "() -> FileResponse",
+          "line_start": 263,
+          "line_end": 264,
+          "doc": "",
+          "calls": [
+            "get",
+            "FileResponse",
+            "join"
+          ]
+        },
+        {
+          "path": "app.main.api_state",
+          "name": "api_state",
+          "kind": "function",
+          "signature": "(since: int=0) -> JSONResponse",
+          "line_start": 268,
+          "line_end": 277,
+          "doc": "",
+          "calls": [
+            "get",
+            "get_events",
+            "JSONResponse",
+            "get_status",
+            "get_history",
+            "event_count",
+            "Depends"
+          ]
+        },
+        {
+          "path": "app.main.api_chat",
+          "name": "api_chat",
+          "kind": "function",
+          "signature": "(request: Request) -> JSONResponse",
+          "line_start": 281,
+          "line_end": 304,
+          "doc": "",
+          "calls": [
+            "post",
+            "get",
+            "add_event",
+            "set_status",
+            "clear_cancel",
+            "persist",
+            "Thread",
+            "start",
+            "JSONResponse",
+            "HTTPException",
+            "get_status",
+            "new_conversation",
+            "json",
+            "isinstance",
+            "strip",
+            "append_history",
+            "Depends"
+          ]
+        },
+        {
+          "path": "app.main.api_stop",
+          "name": "api_stop",
+          "kind": "function",
+          "signature": "() -> JSONResponse",
+          "line_start": 308,
+          "line_end": 312,
+          "doc": "",
+          "calls": [
+            "post",
+            "request_cancel",
+            "kill_current_process",
+            "add_event",
+            "JSONResponse",
+            "Depends"
+          ]
+        },
+        {
+          "path": "app.main.api_restart",
+          "name": "api_restart",
+          "kind": "function",
+          "signature": "() -> JSONResponse",
+          "line_start": 316,
+          "line_end": 321,
+          "doc": "",
+          "calls": [
+            "post",
+            "JSONResponse",
+            "self_restart",
+            "Depends",
+            "str"
+          ]
+        },
+        {
+          "path": "app.main.api_rollback",
+          "name": "api_rollback",
+          "kind": "function",
+          "signature": "() -> JSONResponse",
+          "line_start": 325,
+          "line_end": 330,
+          "doc": "",
+          "calls": [
+            "post",
+            "JSONResponse",
+            "rollback_latest",
+            "Depends",
+            "str"
+          ]
+        },
+        {
+          "path": "app.main._startup",
+          "name": "_startup",
+          "kind": "function",
+          "signature": "() -> None",
+          "line_start": 336,
+          "line_end": 342,
+          "doc": "",
+          "calls": [
+            "ensure_dirs",
+            "load",
+            "get_status",
+            "set_status",
+            "add_event",
+            "persist"
+          ]
+        }
+      ]
+    },
+    "app/memory.py": {
+      "sha256": "dd3644e44c65",
+      "lines": 298,
+      "symbols": [
+        {
+          "path": "app.memory._ensure_dir",
+          "name": "_ensure_dir",
+          "kind": "function",
+          "signature": "() -> None",
+          "line_start": 58,
+          "line_end": 59,
+          "doc": "",
+          "calls": [
+            "makedirs"
+          ]
+        },
+        {
+          "path": "app.memory._safe_conv_id",
+          "name": "_safe_conv_id",
+          "kind": "function",
+          "signature": "(conv_id: str) -> str",
+          "line_start": 62,
+          "line_end": 66,
+          "doc": "",
+          "calls": [
+            "sub",
+            "strip",
+            "strftime"
+          ]
+        },
+        {
+          "path": "app.memory.path_for",
+          "name": "path_for",
+          "kind": "function",
+          "signature": "(conv_id: str) -> str",
+          "line_start": 69,
+          "line_end": 70,
+          "doc": "",
+          "calls": [
+            "join",
+            "_safe_conv_id"
+          ]
+        },
+        {
+          "path": "app.memory.new_conv_id",
+          "name": "new_conv_id",
+          "kind": "function",
+          "signature": "() -> str",
+          "line_start": 73,
+          "line_end": 74,
+          "doc": "",
+          "calls": [
+            "strftime"
+          ]
+        },
+        {
+          "path": "app.memory._now",
+          "name": "_now",
+          "kind": "function",
+          "signature": "() -> str",
+          "line_start": 77,
+          "line_end": 78,
+          "doc": "",
+          "calls": [
+            "strftime"
+          ]
+        },
+        {
+          "path": "app.memory._clean_item",
+          "name": "_clean_item",
+          "kind": "function",
+          "signature": "(text: str) -> str",
+          "line_start": 81,
+          "line_end": 88,
+          "doc": "",
+          "calls": [
+            "strip",
+            "sub",
+            "len",
+            "replace",
+            "str"
+          ]
+        },
+        {
+          "path": "app.memory._parse",
+          "name": "_parse",
+          "kind": "function",
+          "signature": "(text: str) -> Dict[str, object]",
+          "line_start": 91,
+          "line_end": 112,
+          "doc": "把 Markdown 解析成 {meta:{}, sections:{name:[items]}}。",
+          "calls": [
+            "splitlines",
+            "rstrip",
+            "startswith",
+            "split",
+            "strip",
+            "setdefault",
+            "append"
+          ]
+        },
+        {
+          "path": "app.memory._render",
+          "name": "_render",
+          "kind": "function",
+          "signature": "(conv_id: str, meta: Dict[str, str], sections: Dict[str, List[str]]) -> str",
+          "line_start": 115,
+          "line_end": 131,
+          "doc": "",
+          "calls": [
+            "append",
+            "rstrip",
+            "_safe_conv_id",
+            "get",
+            "_now",
+            "join"
+          ]
+        },
+        {
+          "path": "app.memory.load",
+          "name": "load",
+          "kind": "function",
+          "signature": "(conv_id: str) -> Dict[str, object]",
+          "line_start": 134,
+          "line_end": 149,
+          "doc": "",
+          "calls": [
+            "path_for",
+            "_parse",
+            "isfile",
+            "open",
+            "read",
+            "_now"
+          ]
+        },
+        {
+          "path": "app.memory.save",
+          "name": "save",
+          "kind": "function",
+          "signature": "(conv_id: str, data: Dict[str, object]) -> str",
+          "line_start": 152,
+          "line_end": 181,
+          "doc": "",
+          "calls": [
+            "_ensure_dir",
+            "dict",
+            "_now",
+            "setdefault",
+            "_render",
+            "path_for",
+            "replace",
+            "list",
+            "len",
+            "open",
+            "write",
+            "get",
+            "encode"
+          ]
+        },
+        {
+          "path": "app.memory.ensure",
+          "name": "ensure",
+          "kind": "function",
+          "signature": "(conv_id: str, title: str='') -> str",
+          "line_start": 184,
+          "line_end": 201,
+          "doc": "确保记忆文件存在；返回路径。",
+          "calls": [
+            "_ensure_dir",
+            "path_for",
+            "isfile",
+            "save",
+            "load",
+            "dict",
+            "_now",
+            "get"
+          ]
+        },
+        {
+          "path": "app.memory.add_item",
+          "name": "add_item",
+          "kind": "function",
+          "signature": "(conv_id: str, section: str, text: str) -> bool",
+          "line_start": 204,
+          "line_end": 220,
+          "doc": "向某节追加一条提炼知识；去重。返回是否新增。",
+          "calls": [
+            "_clean_item",
+            "load",
+            "dict",
+            "list",
+            "append",
+            "save",
+            "get"
+          ]
+        },
+        {
+          "path": "app.memory.set_title",
+          "name": "set_title",
+          "kind": "function",
+          "signature": "(conv_id: str, title: str) -> None",
+          "line_start": 223,
+          "line_end": 228,
+          "doc": "",
+          "calls": [
+            "load",
+            "dict",
+            "save",
+            "_clean_item",
+            "get"
+          ]
+        },
+        {
+          "path": "app.memory.read_text",
+          "name": "read_text",
+          "kind": "function",
+          "signature": "(conv_id: str, max_bytes: int=6000) -> str",
+          "line_start": 231,
+          "line_end": 243,
+          "doc": "返回记忆文件的 Markdown 文本（截断）。",
+          "calls": [
+            "path_for",
+            "isfile",
+            "len",
+            "open",
+            "read"
+          ]
+        },
+        {
+          "path": "app.memory.list_convs",
+          "name": "list_convs",
+          "kind": "function",
+          "signature": "() -> List[str]",
+          "line_start": 246,
+          "line_end": 255,
+          "doc": "",
+          "calls": [
+            "_ensure_dir",
+            "sorted",
+            "listdir",
+            "endswith",
+            "append"
+          ]
+        },
+        {
+          "path": "app.memory.distill_step",
+          "name": "distill_step",
+          "kind": "function",
+          "signature": "(action: Dict[str, object], result: Dict[str, object]) -> List[tuple]",
+          "line_start": 262,
+          "line_end": 290,
+          "doc": "返回 [(section, text), ...]。",
+          "calls": [
+            "get",
+            "_clean_item",
+            "isinstance",
+            "str",
+            "append"
+          ]
+        },
+        {
+          "path": "app.memory.record_step",
+          "name": "record_step",
+          "kind": "function",
+          "signature": "(conv_id: str, action: Dict[str, object], result: Dict[str, object]) -> None",
+          "line_start": 293,
+          "line_end": 298,
+          "doc": "",
+          "calls": [
+            "distill_step",
+            "add_item"
+          ]
+        }
+      ]
+    },
+    "app/selfupdate.py": {
+      "sha256": "9ae035be96e5",
+      "lines": 176,
+      "symbols": [
+        {
+          "path": "app.selfupdate._ts",
+          "name": "_ts",
+          "kind": "function",
+          "signature": "() -> str",
+          "line_start": 12,
+          "line_end": 13,
+          "doc": "",
+          "calls": [
+            "str",
+            "int",
+            "time"
+          ]
+        },
+        {
+          "path": "app.selfupdate._backup_dir",
+          "name": "_backup_dir",
+          "kind": "function",
+          "signature": "(ts: str) -> str",
+          "line_start": 16,
+          "line_end": 17,
+          "doc": "",
+          "calls": [
+            "join"
+          ]
+        },
+        {
+          "path": "app.selfupdate._iter_app_py_files",
+          "name": "_iter_app_py_files",
+          "kind": "function",
+          "signature": "()",
+          "line_start": 20,
+          "line_end": 28,
+          "doc": "",
+          "calls": [
+            "join",
+            "sorted",
+            "isdir",
+            "listdir",
+            "endswith",
+            "append"
+          ]
+        },
+        {
+          "path": "app.selfupdate._copy_into_backup",
+          "name": "_copy_into_backup",
+          "kind": "function",
+          "signature": "(ts: str) -> None",
+          "line_start": 31,
+          "line_end": 48,
+          "doc": "",
+          "calls": [
+            "_backup_dir",
+            "makedirs",
+            "join",
+            "isdir",
+            "isfile",
+            "sorted",
+            "copy2",
+            "listdir",
+            "endswith",
+            "dirname"
+          ]
+        },
+        {
+          "path": "app.selfupdate._restore_from_backup",
+          "name": "_restore_from_backup",
+          "kind": "function",
+          "signature": "(ts: str) -> None",
+          "line_start": 51,
+          "line_end": 71,
+          "doc": "",
+          "calls": [
+            "_backup_dir",
+            "join",
+            "isdir",
+            "isfile",
+            "RuntimeError",
+            "makedirs",
+            "sorted",
+            "copy2",
+            "listdir",
+            "endswith"
+          ]
+        },
+        {
+          "path": "app.selfupdate._compile_check",
+          "name": "_compile_check",
+          "kind": "function",
+          "signature": "() -> None",
+          "line_start": 74,
+          "line_end": 84,
+          "doc": "",
+          "calls": [
+            "_iter_app_py_files",
+            "RuntimeError",
+            "compile",
+            "append",
+            "join",
+            "basename",
+            "str"
+          ]
+        },
+        {
+          "path": "app.selfupdate._write_restart_log",
+          "name": "_write_restart_log",
+          "kind": "function",
+          "signature": "(ts: str, reason: str) -> None",
+          "line_start": 87,
+          "line_end": 96,
+          "doc": "",
+          "calls": [
+            "makedirs",
+            "join",
+            "open",
+            "write",
+            "strftime",
+            "redact"
+          ]
+        },
+        {
+          "path": "app.selfupdate._exec_restart",
+          "name": "_exec_restart",
+          "kind": "function",
+          "signature": "() -> None",
+          "line_start": 99,
+          "line_end": 103,
+          "doc": "",
+          "calls": [
+            "execv"
+          ]
+        },
+        {
+          "path": "app.selfupdate.self_restart",
+          "name": "self_restart",
+          "kind": "function",
+          "signature": "(reason: str='') -> None",
+          "line_start": 106,
+          "line_end": 132,
+          "doc": "执行自更新流程。成功时进程被 execv 替换，不返回；失败抛异常。",
+          "calls": [
+            "_ts",
+            "_copy_into_backup",
+            "_write_restart_log",
+            "_exec_restart",
+            "_compile_check",
+            "save",
+            "add_event",
+            "_restore_from_backup"
+          ]
+        },
+        {
+          "path": "app.selfupdate.rollback_latest",
+          "name": "rollback_latest",
+          "kind": "function",
+          "signature": "() -> None",
+          "line_start": 135,
+          "line_end": 164,
+          "doc": "从 backups/latest 恢复并重启。",
+          "calls": [
+            "_restore_from_backup",
+            "_write_restart_log",
+            "add_event",
+            "_exec_restart",
+            "isdir",
+            "RuntimeError",
+            "sorted",
+            "_compile_check",
+            "save",
+            "listdir",
+            "isdigit",
+            "join",
+            "int"
+          ]
+        },
+        {
+          "path": "app.selfupdate.safe_self_restart",
+          "name": "safe_self_restart",
+          "kind": "function",
+          "signature": "(reason: str='') -> dict",
+          "line_start": 167,
+          "line_end": 176,
+          "doc": "供动作层调用：成功不返回（execv），失败返回错误 dict。",
+          "calls": [
+            "self_restart",
+            "redact",
+            "format_exc",
+            "str"
+          ]
+        }
+      ]
+    },
+    "app/session.py": {
+      "sha256": "61b0144b3168",
+      "lines": 305,
+      "symbols": [
+        {
+          "path": "app.session.Session",
+          "name": "Session",
+          "kind": "class",
+          "signature": "",
+          "line_start": 20,
+          "line_end": 207,
+          "doc": "",
+          "calls": [
+            "RLock",
+            "strip",
+            "append",
+            "isinstance",
+            "dumps",
+            "len",
+            "list",
+            "new_conv_id",
+            "ensure",
+            "extend",
+            "makedirs",
+            "to_dict",
+            "replace",
+            "exists",
+            "get",
+            "time",
+            "update",
+            "str",
+            "join",
+            "read_text",
+            "killpg",
+            "open",
+            "dump",
+            "load",
+            "int",
+            "getpgid",
+            "kill"
+          ]
+        },
+        {
+          "path": "app.session.Session.__init__",
+          "name": "__init__",
+          "kind": "function",
+          "signature": "(self) -> None",
+          "line_start": 21,
+          "line_end": 29,
+          "doc": "",
+          "calls": [
+            "RLock"
+          ]
+        },
+        {
+          "path": "app.session.Session.add_event",
+          "name": "add_event",
+          "kind": "function",
+          "signature": "(self, kind: str, message: str, **extra: Any) -> None",
+          "line_start": 32,
+          "line_end": 46,
+          "doc": "",
+          "calls": [
+            "append",
+            "isinstance",
+            "dumps",
+            "time",
+            "update",
+            "len"
+          ]
+        },
+        {
+          "path": "app.session.Session.add_message",
+          "name": "add_message",
+          "kind": "function",
+          "signature": "(self, role: str, content: Any) -> None",
+          "line_start": 49,
+          "line_end": 57,
+          "doc": "",
+          "calls": [
+            "isinstance",
+            "dumps",
+            "len",
+            "append"
+          ]
+        },
+        {
+          "path": "app.session.Session.clear_window",
+          "name": "clear_window",
+          "kind": "function",
+          "signature": "(self) -> None",
+          "line_start": 59,
+          "line_end": 61,
+          "doc": "",
+          "calls": []
+        },
+        {
+          "path": "app.session.Session.set_task",
+          "name": "set_task",
+          "kind": "function",
+          "signature": "(self, task: str) -> None",
+          "line_start": 63,
+          "line_end": 65,
+          "doc": "",
+          "calls": []
+        },
+        {
+          "path": "app.session.Session.new_conversation",
+          "name": "new_conversation",
+          "kind": "function",
+          "signature": "(self, task: str) -> str",
+          "line_start": 67,
+          "line_end": 88,
+          "doc": "归档旧窗口，开新对话，返回新 conv_id。",
+          "calls": [
+            "list",
+            "new_conv_id",
+            "ensure",
+            "makedirs",
+            "str",
+            "join",
+            "int",
+            "open",
+            "dump",
+            "time"
+          ]
+        },
+        {
+          "path": "app.session.Session.build_messages",
+          "name": "build_messages",
+          "kind": "function",
+          "signature": "(self, system_prompt: str) -> List[Dict[str, str]]",
+          "line_start": 91,
+          "line_end": 109,
+          "doc": "system + 提炼记忆 + 当前任务 + 最近窗口。",
+          "calls": [
+            "strip",
+            "append",
+            "extend",
+            "read_text",
+            "list"
+          ]
+        },
+        {
+          "path": "app.session.Session.set_status",
+          "name": "set_status",
+          "kind": "function",
+          "signature": "(self, status: str) -> None",
+          "line_start": 112,
+          "line_end": 114,
+          "doc": "",
+          "calls": []
+        },
+        {
+          "path": "app.session.Session.request_cancel",
+          "name": "request_cancel",
+          "kind": "function",
+          "signature": "(self) -> None",
+          "line_start": 116,
+          "line_end": 128,
+          "doc": "",
+          "calls": [
+            "killpg",
+            "getpgid",
+            "kill"
+          ]
+        },
+        {
+          "path": "app.session.Session.is_cancelled",
+          "name": "is_cancelled",
+          "kind": "function",
+          "signature": "(self) -> bool",
+          "line_start": 130,
+          "line_end": 132,
+          "doc": "",
+          "calls": []
+        },
+        {
+          "path": "app.session.Session.reset_cancel",
+          "name": "reset_cancel",
+          "kind": "function",
+          "signature": "(self) -> None",
+          "line_start": 134,
+          "line_end": 136,
+          "doc": "",
+          "calls": []
+        },
+        {
+          "path": "app.session.Session.snapshot",
+          "name": "snapshot",
+          "kind": "function",
+          "signature": "(self, since: int=0) -> Dict[str, Any]",
+          "line_start": 138,
+          "line_end": 148,
+          "doc": "",
+          "calls": [
+            "list",
+            "len"
+          ]
+        },
+        {
+          "path": "app.session.Session.to_dict",
+          "name": "to_dict",
+          "kind": "function",
+          "signature": "(self) -> Dict[str, Any]",
+          "line_start": 150,
+          "line_end": 158,
+          "doc": "",
+          "calls": [
+            "list"
+          ]
+        },
+        {
+          "path": "app.session.Session.persist",
+          "name": "persist",
+          "kind": "function",
+          "signature": "(self) -> None",
+          "line_start": 160,
+          "line_end": 169,
+          "doc": "",
+          "calls": [
+            "makedirs",
+            "to_dict",
+            "replace",
+            "open",
+            "dump"
+          ]
+        },
+        {
+          "path": "app.session.Session.load",
+          "name": "load",
+          "kind": "function",
+          "signature": "(self) -> None",
+          "line_start": 171,
+          "line_end": 207,
+          "doc": "",
+          "calls": [
+            "exists",
+            "get",
+            "open",
+            "load",
+            "len",
+            "append",
+            "makedirs",
+            "str",
+            "join",
+            "int",
+            "dump",
+            "time"
+          ]
+        },
+        {
+          "path": "app.session.init",
+          "name": "init",
+          "kind": "function",
+          "signature": "() -> None",
+          "line_start": 216,
+          "line_end": 221,
+          "doc": "",
+          "calls": [
+            "makedirs",
+            "load",
+            "persist",
+            "join"
+          ]
+        },
+        {
+          "path": "app.session.load",
+          "name": "load",
+          "kind": "function",
+          "signature": "() -> None",
+          "line_start": 224,
+          "line_end": 225,
+          "doc": "",
+          "calls": [
+            "load"
+          ]
+        },
+        {
+          "path": "app.session.persist",
+          "name": "persist",
+          "kind": "function",
+          "signature": "() -> None",
+          "line_start": 228,
+          "line_end": 229,
+          "doc": "",
+          "calls": [
+            "persist"
+          ]
+        },
+        {
+          "path": "app.session.add_event",
+          "name": "add_event",
+          "kind": "function",
+          "signature": "(kind: str, message: str, **extra: Any) -> None",
+          "line_start": 232,
+          "line_end": 233,
+          "doc": "",
+          "calls": [
+            "add_event"
+          ]
+        },
+        {
+          "path": "app.session.append_history",
+          "name": "append_history",
+          "kind": "function",
+          "signature": "(role: str, content: str) -> None",
+          "line_start": 236,
+          "line_end": 237,
+          "doc": "",
+          "calls": [
+            "add_message"
+          ]
+        },
+        {
+          "path": "app.session.get_history",
+          "name": "get_history",
+          "kind": "function",
+          "signature": "() -> List[Dict[str, str]]",
+          "line_start": 240,
+          "line_end": 242,
+          "doc": "",
+          "calls": [
+            "list"
+          ]
+        },
+        {
+          "path": "app.session.get_events",
+          "name": "get_events",
+          "kind": "function",
+          "signature": "(since: int=0) -> List[Dict[str, Any]]",
+          "line_start": 245,
+          "line_end": 247,
+          "doc": "",
+          "calls": [
+            "list"
+          ]
+        },
+        {
+          "path": "app.session.event_count",
+          "name": "event_count",
+          "kind": "function",
+          "signature": "() -> int",
+          "line_start": 250,
+          "line_end": 252,
+          "doc": "",
+          "calls": [
+            "len"
+          ]
+        },
+        {
+          "path": "app.session.get_status",
+          "name": "get_status",
+          "kind": "function",
+          "signature": "() -> str",
+          "line_start": 255,
+          "line_end": 257,
+          "doc": "",
+          "calls": []
+        },
+        {
+          "path": "app.session.set_status",
+          "name": "set_status",
+          "kind": "function",
+          "signature": "(status: str) -> None",
+          "line_start": 260,
+          "line_end": 261,
+          "doc": "",
+          "calls": [
+            "set_status"
+          ]
+        },
+        {
+          "path": "app.session.is_cancelled",
+          "name": "is_cancelled",
+          "kind": "function",
+          "signature": "() -> bool",
+          "line_start": 264,
+          "line_end": 265,
+          "doc": "",
+          "calls": [
+            "is_cancelled"
+          ]
+        },
+        {
+          "path": "app.session.request_cancel",
+          "name": "request_cancel",
+          "kind": "function",
+          "signature": "() -> None",
+          "line_start": 268,
+          "line_end": 269,
+          "doc": "",
+          "calls": [
+            "request_cancel"
+          ]
+        },
+        {
+          "path": "app.session.clear_cancel",
+          "name": "clear_cancel",
+          "kind": "function",
+          "signature": "() -> None",
+          "line_start": 272,
+          "line_end": 273,
+          "doc": "",
+          "calls": [
+            "reset_cancel"
+          ]
+        },
+        {
+          "path": "app.session.get_conv_id",
+          "name": "get_conv_id",
+          "kind": "function",
+          "signature": "() -> str",
+          "line_start": 276,
+          "line_end": 278,
+          "doc": "",
+          "calls": []
+        },
+        {
+          "path": "app.session.new_conversation",
+          "name": "new_conversation",
+          "kind": "function",
+          "signature": "(task: str) -> str",
+          "line_start": 281,
+          "line_end": 282,
+          "doc": "",
+          "calls": [
+            "new_conversation"
+          ]
+        },
+        {
+          "path": "app.session.build_messages",
+          "name": "build_messages",
+          "kind": "function",
+          "signature": "(system_prompt: str) -> List[Dict[str, str]]",
+          "line_start": 285,
+          "line_end": 286,
+          "doc": "",
+          "calls": [
+            "build_messages"
+          ]
+        },
+        {
+          "path": "app.session.record_step",
+          "name": "record_step",
+          "kind": "function",
+          "signature": "(action: Dict[str, Any], result: Dict[str, Any]) -> None",
+          "line_start": 289,
+          "line_end": 292,
+          "doc": "",
+          "calls": [
+            "get_conv_id",
+            "record_step"
+          ]
+        },
+        {
+          "path": "app.session.set_current_process",
+          "name": "set_current_process",
+          "kind": "function",
+          "signature": "(proc) -> None",
+          "line_start": 295,
+          "line_end": 296,
+          "doc": "",
+          "calls": []
+        },
+        {
+          "path": "app.session.clear_current_process",
+          "name": "clear_current_process",
+          "kind": "function",
+          "signature": "(proc=None) -> None",
+          "line_start": 299,
+          "line_end": 301,
+          "doc": "",
+          "calls": []
+        },
+        {
+          "path": "app.session.save",
+          "name": "save",
+          "kind": "function",
+          "signature": "() -> None",
+          "line_start": 304,
+          "line_end": 305,
+          "doc": "",
+          "calls": [
+            "persist"
+          ]
+        }
+      ]
+    },
+    "apply_selfheal.py": {
+      "sha256": "5fbf4f70ad4a",
+      "lines": 238,
+      "symbols": []
+    },
+    "build_index.py": {
+      "sha256": "8628530c07ab",
+      "lines": 193,
+      "symbols": [
+        {
+          "path": "build_index._module_path",
+          "name": "_module_path",
+          "kind": "function",
+          "signature": "(rel_path: str) -> str",
+          "line_start": 26,
+          "line_end": 34,
+          "doc": "app/main.py -> app.main ; app/__init__.py -> app",
+          "calls": [
+            "replace",
+            "endswith",
+            "join",
+            "split"
+          ]
+        },
+        {
+          "path": "build_index._first_doc_line",
+          "name": "_first_doc_line",
+          "kind": "function",
+          "signature": "(node: ast.AST) -> str",
+          "line_start": 37,
+          "line_end": 41,
+          "doc": "",
+          "calls": [
+            "get_docstring",
+            "strip",
+            "splitlines"
+          ]
+        },
+        {
+          "path": "build_index._signature",
+          "name": "_signature",
+          "kind": "function",
+          "signature": "(node: ast.AST) -> str",
+          "line_start": 44,
+          "line_end": 65,
+          "doc": "",
+          "calls": [
+            "isinstance",
+            "unparse",
+            "append",
+            "join"
+          ]
+        },
+        {
+          "path": "build_index._collect_calls",
+          "name": "_collect_calls",
+          "kind": "function",
+          "signature": "(node: ast.AST) -> List[str]",
+          "line_start": 68,
+          "line_end": 84,
+          "doc": "Collect names of all call targets inside node body (deduped, sorted).",
+          "calls": [
+            "set",
+            "walk",
+            "isinstance",
+            "add",
+            "append"
+          ]
+        },
+        {
+          "path": "build_index._symbol_entry",
+          "name": "_symbol_entry",
+          "kind": "function",
+          "signature": "(node: ast.AST, path: str, kind: str) -> Dict[str, Any]",
+          "line_start": 87,
+          "line_end": 97,
+          "doc": "",
+          "calls": [
+            "getattr",
+            "_signature",
+            "_first_doc_line",
+            "_collect_calls"
+          ]
+        },
+        {
+          "path": "build_index._walk_body",
+          "name": "_walk_body",
+          "kind": "function",
+          "signature": "(body: List[ast.stmt], prefix: str, out: List[Dict[str, Any]]) -> None",
+          "line_start": 100,
+          "line_end": 106,
+          "doc": "",
+          "calls": [
+            "isinstance",
+            "append",
+            "_symbol_entry",
+            "_walk_body"
+          ]
+        },
+        {
+          "path": "build_index.index_file",
+          "name": "index_file",
+          "kind": "function",
+          "signature": "(abs_path: str, rel_path: str) -> Dict[str, Any]",
+          "line_start": 109,
+          "line_end": 131,
+          "doc": "Index a single file. Returns dict with sha256/lines/symbols or error.",
+          "calls": [
+            "decode",
+            "_walk_body",
+            "sort",
+            "hexdigest",
+            "count",
+            "parse",
+            "_module_path",
+            "open",
+            "read",
+            "sha256",
+            "endswith"
+          ]
+        },
+        {
+          "path": "build_index.iter_py_files",
+          "name": "iter_py_files",
+          "kind": "function",
+          "signature": "(root: str=PROJECT_ROOT) -> List[str]",
+          "line_start": 134,
+          "line_end": 145,
+          "doc": "Return sorted relative paths of all .py files under root.",
+          "calls": [
+            "walk",
+            "sorted",
+            "join",
+            "replace",
+            "append",
+            "endswith",
+            "relpath",
+            "startswith"
+          ]
+        },
+        {
+          "path": "build_index.build_index",
+          "name": "build_index",
+          "kind": "function",
+          "signature": "(output: str=DEFAULT_OUTPUT, root: str=PROJECT_ROOT) -> Dict[str, Any]",
+          "line_start": 148,
+          "line_end": 175,
+          "doc": "Build the index and write it to output. Returns the index dict.",
+          "calls": [
+            "time",
+            "iter_py_files",
+            "join",
+            "index_file",
+            "len",
+            "isoformat",
+            "abspath",
+            "isabs",
+            "open",
+            "dump",
+            "round",
+            "get",
+            "astimezone",
+            "now"
+          ]
+        },
+        {
+          "path": "build_index.main",
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: Optional[List[str]]=None) -> int",
+          "line_start": 178,
+          "line_end": 189,
+          "doc": "",
+          "calls": [
+            "ArgumentParser",
+            "add_argument",
+            "parse_args",
+            "build_index",
+            "print"
+          ]
+        }
+      ]
+    },
+    "read_file_summary.py": {
+      "sha256": "2344d8f4971d",
+      "lines": 133,
+      "symbols": [
+        {
+          "path": "read_file_summary._module_path",
+          "name": "_module_path",
+          "kind": "function",
+          "signature": "(rel_path: str) -> str",
+          "line_start": 18,
+          "line_end": 25,
+          "doc": "",
+          "calls": [
+            "replace",
+            "endswith",
+            "join",
+            "split"
+          ]
+        },
+        {
+          "path": "read_file_summary._signature",
+          "name": "_signature",
+          "kind": "function",
+          "signature": "(node: ast.AST) -> str",
+          "line_start": 28,
+          "line_end": 49,
+          "doc": "",
+          "calls": [
+            "isinstance",
+            "unparse",
+            "append",
+            "join"
+          ]
+        },
+        {
+          "path": "read_file_summary._first_doc_line",
+          "name": "_first_doc_line",
+          "kind": "function",
+          "signature": "(node: ast.AST) -> str",
+          "line_start": 52,
+          "line_end": 56,
+          "doc": "",
+          "calls": [
+            "get_docstring",
+            "strip",
+            "splitlines"
+          ]
+        },
+        {
+          "path": "read_file_summary._walk",
+          "name": "_walk",
+          "kind": "function",
+          "signature": "(body: List[ast.stmt], prefix: str, out: List[Dict[str, Any]]) -> None",
+          "line_start": 59,
+          "line_end": 81,
+          "doc": "",
+          "calls": [
+            "isinstance",
+            "append",
+            "_walk",
+            "_signature",
+            "getattr",
+            "_first_doc_line"
+          ]
+        },
+        {
+          "path": "read_file_summary.summarize_file",
+          "name": "summarize_file",
+          "kind": "function",
+          "signature": "(path: str) -> List[Dict[str, Any]]",
+          "line_start": 84,
+          "line_end": 96,
+          "doc": "Return list of symbol dicts for the given file path (relative to project root).",
+          "calls": [
+            "parse",
+            "replace",
+            "_walk",
+            "sort",
+            "isabs",
+            "join",
+            "isfile",
+            "FileNotFoundError",
+            "open",
+            "read",
+            "_module_path",
+            "relpath"
+          ]
+        },
+        {
+          "path": "read_file_summary.format_summary",
+          "name": "format_summary",
+          "kind": "function",
+          "signature": "(symbols: List[Dict[str, Any]]) -> str",
+          "line_start": 99,
+          "line_end": 107,
+          "doc": "",
+          "calls": [
+            "max",
+            "join",
+            "append",
+            "len",
+            "ljust"
+          ]
+        },
+        {
+          "path": "read_file_summary.main",
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: Optional[List[str]]=None) -> int",
+          "line_start": 110,
+          "line_end": 129,
+          "doc": "",
+          "calls": [
+            "list",
+            "format_summary",
+            "len",
+            "print",
+            "summarize_file"
+          ]
+        }
+      ]
+    },
+    "read_symbol.py": {
+      "sha256": "addcd29c11e4",
+      "lines": 131,
+      "symbols": [
+        {
+          "path": "read_symbol.SymbolNotFound",
+          "name": "SymbolNotFound",
+          "kind": "class",
+          "signature": "(Exception)",
+          "line_start": 20,
+          "line_end": 21,
+          "doc": "Raised when a symbol path cannot be resolved.",
+          "calls": []
+        },
+        {
+          "path": "read_symbol.SymbolLookupError",
+          "name": "SymbolLookupError",
+          "kind": "class",
+          "signature": "(Exception)",
+          "line_start": 24,
+          "line_end": 25,
+          "doc": "Raised for other lookup problems (bad path, missing file, syntax error).",
+          "calls": []
+        },
+        {
+          "path": "read_symbol._candidate_files",
+          "name": "_candidate_files",
+          "kind": "function",
+          "signature": "(symbol_path: str) -> List[Tuple[str, List[str]]]",
+          "line_start": 28,
+          "line_end": 51,
+          "doc": "Return list of (abs_file, remaining_parts) candidates, longest module first.",
+          "calls": [
+            "range",
+            "len",
+            "SymbolLookupError",
+            "join",
+            "isfile",
+            "split",
+            "append"
+          ]
+        },
+        {
+          "path": "read_symbol._find_in_body",
+          "name": "_find_in_body",
+          "kind": "function",
+          "signature": "(body: List[ast.stmt], names: List[str]) -> Optional[ast.AST]",
+          "line_start": 54,
+          "line_end": 64,
+          "doc": "Find nested node matching names chain (e.g. ['Session', 'add_message']).",
+          "calls": [
+            "isinstance",
+            "_find_in_body",
+            "len"
+          ]
+        },
+        {
+          "path": "read_symbol._locate",
+          "name": "_locate",
+          "kind": "function",
+          "signature": "(symbol_path: str) -> Tuple[str, ast.AST, List[str]]",
+          "line_start": 67,
+          "line_end": 85,
+          "doc": "",
+          "calls": [
+            "_candidate_files",
+            "SymbolNotFound",
+            "_find_in_body",
+            "parse",
+            "open",
+            "read",
+            "SymbolLookupError",
+            "splitlines"
+          ]
+        },
+        {
+          "path": "read_symbol.get_symbol_info",
+          "name": "get_symbol_info",
+          "kind": "function",
+          "signature": "(symbol_path: str) -> dict",
+          "line_start": 88,
+          "line_end": 100,
+          "doc": "Return dict with file/line_start/line_end/source for a symbol path.",
+          "calls": [
+            "_locate",
+            "getattr",
+            "join",
+            "replace",
+            "relpath"
+          ]
+        },
+        {
+          "path": "read_symbol.get_symbol_source",
+          "name": "get_symbol_source",
+          "kind": "function",
+          "signature": "(symbol_path: str) -> str",
+          "line_start": 103,
+          "line_end": 105,
+          "doc": "Return the source code of the symbol (str). Raises on failure.",
+          "calls": [
+            "get_symbol_info"
+          ]
+        },
+        {
+          "path": "read_symbol.main",
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: Optional[List[str]]=None) -> int",
+          "line_start": 108,
+          "line_end": 127,
+          "doc": "",
+          "calls": [
+            "list",
+            "write",
+            "len",
+            "print",
+            "get_symbol_info",
+            "endswith"
+          ]
+        }
+      ]
+    },
+    "setup_robust.py": {
+      "sha256": "2f92e8b58d98",
+      "lines": 177,
+      "symbols": []
+    }
+  }
+}

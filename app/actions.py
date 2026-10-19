@@ -250,6 +250,57 @@ def do_self_restart(reason: str = "") -> Dict[str, Any]:
     return {"error": "self_restart 未按预期重启进程", "reason": reason}
 
 
+
+def do_read_symbol(symbol: str = "") -> Dict[str, Any]:
+    """按符号路径读取源码，返回 {ok, symbol, line_start, line_end, source}。"""
+    if not symbol:
+        return {"ok": False, "error": "read_symbol 缺少 symbol"}
+    try:
+        import read_symbol as rs
+
+        info = rs.get_symbol_info(symbol)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "symbol": symbol, "error": str(exc)}
+    return {
+        "ok": True,
+        "symbol": symbol,
+        "file": info.get("file", ""),
+        "line_start": info.get("line_start", 0),
+        "line_end": info.get("line_end", 0),
+        "source": info.get("source", ""),
+    }
+
+
+def do_read_file_summary(path: str = "") -> Dict[str, Any]:
+    """返回文件内所有符号的签名/行号/doc。"""
+    if not path:
+        return {"ok": False, "error": "read_file_summary 缺少 path"}
+    try:
+        import read_file_summary as rfs
+
+        symbols = rfs.summarize_file(path)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "path": path, "error": str(exc)}
+    return {"ok": True, "path": path, "symbols": symbols}
+
+
+def do_rebuild_index() -> Dict[str, Any]:
+    """重建 .index.json，返回统计信息。"""
+    try:
+        import build_index as bi
+
+        index = bi.build_index()
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+    stats = index.get("_stats", {})
+    return {
+        "ok": True,
+        "file_count": stats.get("file_count", 0),
+        "symbol_count": stats.get("symbol_count", 0),
+        "elapsed_sec": stats.get("elapsed_sec", 0),
+    }
+
+
 def do_done(message: str = "") -> Dict[str, Any]:
     return {"result_of": "done", "message": message or ""}
 
@@ -276,6 +327,12 @@ def execute_action(action: Dict[str, Any]) -> Dict[str, Any]:
             return do_read_file(action.get("path", ""), action.get("max_bytes"))
         if name == "self_restart":
             return do_self_restart(action.get("reason", ""))
+        if name == "read_symbol":
+            return do_read_symbol(action.get("symbol", ""))
+        if name == "read_file_summary":
+            return do_read_file_summary(action.get("path", ""))
+        if name == "rebuild_index":
+            return do_rebuild_index()
         if name == "done":
             return do_done(action.get("message", ""))
     except Exception as exc:  # noqa: BLE001
