@@ -96,6 +96,110 @@
     transition: flex-basis 0.15s ease, width 0.15s ease;
   }
   body.show-log #logPane { flex: 0 0 380px; width: 380px; }
+  #memoryPane {
+    flex: 0 0 0;
+    width: 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    border-left: 1px solid #262b36;
+    overflow: hidden;
+    transition: flex-basis 0.15s ease, width 0.15s ease;
+  }
+  body.show-memory #memoryPane { flex: 0 0 420px; width: 420px; }
+  #memoryList {
+    flex: 0 0 auto;
+    max-height: 40%;
+    overflow-y: auto;
+    border-bottom: 1px solid #262b36;
+  }
+  .mem-item {
+    padding: 6px 12px;
+    border-bottom: 1px dashed #1f242e;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .mem-item:hover { background: #1b2029; }
+  .mem-item.active { background: #1e3a8a; }
+  .mem-item .t { color: #e6e6e6; display: block; }
+  .mem-item .m { color: #6b7280; font-size: 11px; }
+  #memoryDetail {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 8px 12px;
+    min-height: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #b6bdc9;
+  }
+  #contextPane {
+    flex: 0 0 0;
+    width: 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    border-left: 1px solid #262b36;
+    overflow: hidden;
+    transition: flex-basis 0.15s ease, width 0.15s ease;
+  }
+  body.show-context #contextPane { flex: 0 0 460px; width: 460px; }
+  #contextBody {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 8px 12px;
+    min-height: 0;
+    font-size: 12px;
+  }
+  .ctx-summary {
+    padding: 6px 0 10px;
+    color: #8b93a1;
+    border-bottom: 1px solid #262b36;
+    margin-bottom: 8px;
+  }
+  .ctx-part {
+    border: 1px solid #262b36;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .ctx-part .hd {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: #12151b;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .ctx-part .hd .tag {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #374151;
+    color: #d1d5db;
+  }
+  .ctx-part .hd .tag.system_prompt { background: #7c2d12; color: #fdba74; }
+  .ctx-part .hd .tag.memory { background: #14532d; color: #86efac; }
+  .ctx-part .hd .tag.task { background: #1e3a8a; color: #93c5fd; }
+  .ctx-part .hd .tag.history { background: #4c1d95; color: #c4b5fd; }
+  .ctx-part .hd .chars { margin-left: auto; color: #6b7280; font-size: 11px; }
+  .ctx-part .bd {
+    display: none;
+    padding: 8px 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #b6bdc9;
+    max-height: 320px;
+    overflow-y: auto;
+    border-top: 1px solid #262b36;
+  }
+  .ctx-part.open .bd { display: block; }
   .pane-title {
     padding: 6px 14px;
     font-size: 12px;
@@ -197,6 +301,8 @@
   .err { color: #f87171; }
   @media (max-width: 800px) {
     body.show-log #logPane { flex: 0 0 45%; width: 45%; }
+    body.show-memory #memoryPane { flex: 0 0 45%; width: 45%; }
+    body.show-context #contextPane { flex: 0 0 55%; width: 55%; }
   }
 </style>
 </head>
@@ -208,6 +314,8 @@
   <button id="saveToken" class="secondary">保存 Token</button>
   <div class="spacer"></div>
   <button id="logBtn" class="secondary">日志</button>
+  <button id="memoryBtn" class="secondary">记忆</button>
+  <button id="contextBtn" class="secondary">上下文</button>
   <button id="stopBtn" class="danger">停止</button>
   <button id="restartBtn" class="secondary">重启</button>
   <button id="rollbackBtn" class="secondary">回滚</button>
@@ -220,6 +328,15 @@
   <section id="logPane">
     <div class="pane-title">事件日志</div>
     <div id="events"></div>
+  </section>
+  <section id="contextPane">
+    <div class="pane-title">上下文拼接（下次调用 DeepSeek 的 messages）</div>
+    <div id="contextBody">点击刷新查看。</div>
+  </section>
+  <section id="memoryPane">
+    <div class="pane-title">记忆</div>
+    <div id="memoryList"></div>
+    <div id="memoryDetail">选择左侧会话查看记忆内容。</div>
   </section>
 </main>
 
@@ -246,7 +363,8 @@
     polling: false,
     timer: null,
     lastError: null,
-    expanded: {}   // 记录用户手动展开的消息索引
+    expanded: {},  // 记录用户手动展开的消息索引
+    memConv: null
   };
 
   var el = {
@@ -260,7 +378,12 @@
     stopBtn: document.getElementById("stopBtn"),
     restartBtn: document.getElementById("restartBtn"),
     rollbackBtn: document.getElementById("rollbackBtn"),
-    logBtn: document.getElementById("logBtn")
+    logBtn: document.getElementById("logBtn"),
+    memoryBtn: document.getElementById("memoryBtn"),
+    memoryList: document.getElementById("memoryList"),
+    memoryDetail: document.getElementById("memoryDetail"),
+    contextBtn: document.getElementById("contextBtn"),
+    contextBody: document.getElementById("contextBody")
   };
 
   function getToken() { return (el.token.value || "").trim(); }
@@ -503,11 +626,142 @@
   }
 
   function toggleLog() {
+    document.body.classList.remove("show-memory");
+    document.body.classList.remove("show-context");
     document.body.classList.toggle("show-log");
     if (document.body.classList.contains("show-log")) {
       var box = el.events;
       box.scrollTop = box.scrollHeight;
     }
+  }
+
+  function getJSON(path) {
+    return fetch(path, { headers: authHeaders() }).then(function (resp) {
+      if (resp.status === 401 || resp.status === 403) throw new Error("鉴权失败，请检查 Token");
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      return resp.json();
+    });
+  }
+
+  function renderMemoryList(convs) {
+    var box = el.memoryList;
+    box.innerHTML = "";
+    if (!convs || !convs.length) {
+      var hint = document.createElement("div");
+      hint.className = "mem-item";
+      hint.textContent = "暂无记忆";
+      box.appendChild(hint);
+      return;
+    }
+    for (var i = 0; i < convs.length; i++) {
+      var c = convs[i] || {};
+      var div = document.createElement("div");
+      div.className = "mem-item" + (c.conv_id === state.memConv ? " active" : "");
+      var t = document.createElement("span");
+      t.className = "t";
+      t.textContent = (c.title || c.conv_id || "(无标题)");
+      var m = document.createElement("span");
+      m.className = "m";
+      m.textContent = (c.conv_id || "") + " · " + (c.updated || "") + " · " + (c.item_count || 0) + " 条";
+      div.appendChild(t);
+      div.appendChild(m);
+      (function (cid) {
+        div.addEventListener("click", function () { loadMemoryDetail(cid); });
+      })(c.conv_id);
+      box.appendChild(div);
+    }
+  }
+
+  function loadMemoryList() {
+    el.memoryList.innerHTML = "";
+    getJSON("/api/memory")
+      .then(function (data) { renderMemoryList((data && data.conversations) || []); })
+      .catch(function (err) { setHint("记忆加载失败: " + err.message, true); });
+  }
+
+  function loadMemoryDetail(convId) {
+    if (!convId) return;
+    state.memConv = convId;
+    el.memoryDetail.textContent = "加载中...";
+    getJSON("/api/memory/" + encodeURIComponent(convId))
+      .then(function (data) {
+        el.memoryDetail.textContent = (data && data.markdown) || "(空)";
+        loadMemoryList();
+      })
+      .catch(function (err) { el.memoryDetail.textContent = "加载失败: " + err.message; });
+  }
+
+  function toggleMemory() {
+    document.body.classList.remove("show-log");
+    document.body.classList.remove("show-context");
+    document.body.classList.toggle("show-memory");
+    if (document.body.classList.contains("show-memory")) loadMemoryList();
+  }
+
+  var CTX_LABELS = {
+    system_prompt: "系统提示词",
+    memory: "长期记忆",
+    task: "当前任务",
+    history: "对话历史"
+  };
+
+  function renderContext(data) {
+    var box = el.contextBody;
+    box.innerHTML = "";
+    if (!data || !data.parts) {
+      box.textContent = "暂无上下文";
+      return;
+    }
+    var sum = document.createElement("div");
+    sum.className = "ctx-summary";
+    sum.textContent = "会话 " + (data.conv_id || "-") + " · 共 " + data.message_count + " 条 message · " + data.total_chars + " 字符";
+    box.appendChild(sum);
+
+    for (var i = 0; i < data.parts.length; i++) {
+      var p = data.parts[i] || {};
+      var wrap = document.createElement("div");
+      wrap.className = "ctx-part";
+
+      var hd = document.createElement("div");
+      hd.className = "hd";
+      var tag = document.createElement("span");
+      tag.className = "tag " + (p.kind || "");
+      tag.textContent = CTX_LABELS[p.kind] || p.kind || "?";
+      var lab = document.createElement("span");
+      lab.textContent = "#" + p.index + " " + (p.label || "") + " (" + (p.role || "") + ")";
+      var ch = document.createElement("span");
+      ch.className = "chars";
+      ch.textContent = (p.chars || 0) + " 字符";
+      hd.appendChild(tag);
+      hd.appendChild(lab);
+      hd.appendChild(ch);
+
+      var bd = document.createElement("div");
+      bd.className = "bd";
+      bd.textContent = p.content || "";
+
+      (function (w) {
+        hd.addEventListener("click", function () { w.classList.toggle("open"); });
+      })(wrap);
+
+      wrap.appendChild(hd);
+      wrap.appendChild(bd);
+      box.appendChild(wrap);
+    }
+  }
+
+  function loadContext() {
+    el.contextBody.textContent = "加载中...";
+    getJSON("/api/context")
+      .then(function (data) { renderContext(data); })
+      .catch(function (err) { el.contextBody.textContent = "加载失败: " + err.message; });
+  }
+
+  function toggleContext() {
+    document.body.classList.remove("show-log");
+    document.body.classList.remove("show-memory");
+    document.body.classList.toggle("show-context");
+    if (document.body.classList.contains("show-context")) loadContext();
   }
 
   function bind() {
@@ -517,6 +771,8 @@
     el.restartBtn.addEventListener("click", doRestart);
     el.rollbackBtn.addEventListener("click", doRollback);
     el.logBtn.addEventListener("click", toggleLog);
+    el.memoryBtn.addEventListener("click", toggleMemory);
+    el.contextBtn.addEventListener("click", toggleContext);
     el.prompt.addEventListener("keydown", function (e) {
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
         e.preventDefault();

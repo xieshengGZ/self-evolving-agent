@@ -115,6 +115,12 @@ def execute_action(action: Dict[str, Any]) -> Dict[str, Any]:
             )
         if name == "self_restart":
             return actions.do_self_restart(reason=str(action.get("reason", "")))
+        if name == "read_symbol":
+            return actions.do_read_symbol(symbol=str(action.get("symbol", "")))
+        if name == "read_file_summary":
+            return actions.do_read_file_summary(path=str(action.get("path", "")))
+        if name == "rebuild_index":
+            return actions.do_rebuild_index()
         if name == "done":
             return {"result_of": "done", "message": str(action.get("message", ""))}
         return {"error": f"unknown action: {name}"}
@@ -277,6 +283,21 @@ def api_state(since: int = 0) -> JSONResponse:
     )
 
 
+@app.get("/api/context", dependencies=[Depends(require_token)])
+def api_context() -> JSONResponse:
+    """展示下一次调用 DeepSeek 时 messages 的拼接明细。"""
+    try:
+        system_prompt = load_system_prompt()
+    except Exception as e:
+        system_prompt = "你是 agent-services，只能返回单个 JSON 动作。"
+        _append_event("error", f"读 system.md 失败: {e}")
+    try:
+        data = session.build_context_preview(system_prompt)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"组装上下文失败: {e}")
+    return JSONResponse({"ok": True, **data})
+
+
 @app.post("/api/chat", dependencies=[Depends(require_token)])
 async def api_chat(request: Request) -> JSONResponse:
     try:
@@ -290,10 +311,17 @@ async def api_chat(request: Request) -> JSONResponse:
     if session.get_status() == "running":
         raise HTTPException(status_code=409, detail="agent is running")
 
-    try:
-        session.new_conversation(prompt)
-    except Exception:
+    if (body or {}).get("new_conversation") is True:
+        try:
+            session.new_conversation(prompt)
+        except Exception:
+            session.append_history("user", prompt)
+    else:
         session.append_history("user", prompt)
+    try:
+        session.record_prompt(prompt)
+    except Exception:
+        pass
     session.add_event("user", prompt)
     session.set_status("running")
     session.clear_cancel()
@@ -347,6 +375,9 @@ _startup()
 # manual ops
 from app._robust import register as _register_manual
 _register_manual(app)
+
+from app.memory_api import register as _register_memory
+_register_memory(app, require_token)
 
 
 if __name__ == "__main__":

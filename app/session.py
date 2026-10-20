@@ -286,10 +286,65 @@ def build_messages(system_prompt: str) -> List[Dict[str, str]]:
     return _default.build_messages(system_prompt)
 
 
+def get_task() -> str:
+    with _default.lock:
+        return _default.task
+
+
+def build_context_preview(system_prompt: str) -> Dict[str, Any]:
+    """返回上下文拼接的明细，供前端展示（不调用模型）。"""
+    messages = build_messages(system_prompt)
+    parts: List[Dict[str, Any]] = []
+    for i, m in enumerate(messages):
+        role = str(m.get("role", ""))
+        content = m.get("content", "")
+        if not isinstance(content, str):
+            content = str(content)
+        if i == 0:
+            kind = "system_prompt"
+            label = "系统提示词 prompts/system.md"
+        elif role == "system" and content.startswith("## 长期记忆"):
+            kind = "memory"
+            label = "长期记忆（提炼知识）"
+        elif role == "user" and content.startswith("当前任务："):
+            kind = "task"
+            label = "当前任务"
+        else:
+            kind = "history"
+            label = "对话历史窗口"
+        parts.append({
+            "index": i,
+            "kind": kind,
+            "label": label,
+            "role": role,
+            "chars": len(content),
+            "content": content,
+        })
+    total = sum(p["chars"] for p in parts)
+    return {
+        "conv_id": get_conv_id(),
+        "message_count": len(messages),
+        "total_chars": total,
+        "parts": parts,
+    }
+
+
 def record_step(action: Dict[str, Any], result: Dict[str, Any]) -> None:
     cid = get_conv_id()
     if cid:
         memory.record_step(cid, action, result)
+
+
+def record_prompt(prompt: str) -> None:
+    """从用户 prompt 提炼「任务目标」「用户偏好」写入记忆。"""
+    cid = get_conv_id()
+    if not cid or not prompt:
+        return
+    try:
+        for section, text in memory.distill_prompt(prompt):
+            memory.add_item(cid, section, text)
+    except Exception:
+        pass
 
 
 def set_current_process(proc) -> None:

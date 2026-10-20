@@ -259,6 +259,62 @@ def list_convs() -> List[str]:
 # 规则提炼：把一步动作+结果压缩成一条知识（不额外调用 API）
 # ---------------------------------------------------------------------------
 
+# 用户措辞 -> 偏好 的规则表（命中即记一条「用户偏好」）
+PREFERENCE_RULES: List[tuple] = [
+    (r"不要问确认|别问|不用确认|一步到底", "用户希望一步到底，不要反复确认"),
+    (r"不要改|禁止|不许|别动", "用户明确禁止改动某些文件/模块，需严格遵守"),
+    (r"最小改动|不要重构|别重构|最小化", "用户偏好最小改动，不要顺手重构"),
+    (r"中文|用中文", "用户偏好使用中文交流"),
+    (r"简洁|简短|别啰嗦|直接说", "用户偏好简洁直接的回复"),
+    (r"先.*再.*验证|验证一下|确认生效", "用户要求改完必须验证"),
+    (r"前端|页面|UI|界面", "用户关注前端/界面展示效果"),
+]
+
+# 从文件内容里识别项目架构的规则（命中即记一条「项目架构」）
+ARCH_RULES: List[tuple] = [
+    (r"FastAPI\(", "项目使用 FastAPI 框架"),
+    (r"uvicorn\.run", "服务通过 uvicorn 启动"),
+    (r"from fastapi import", "后端基于 FastAPI"),
+    (r"@app\.(get|post|put|delete)", "存在 FastAPI 路由定义"),
+    (r"sqlite3|SQLAlchemy|psycopg", "项目使用数据库"),
+    (r"threading\.Thread", "使用线程执行后台任务"),
+    (r"class .*Session", "存在会话管理类"),
+    (r"def agent_loop", "存在 agent 主循环"),
+    (r"import React|from react", "前端使用 React"),
+    (r"<html", "包含 HTML 页面"),
+]
+
+
+def distill_prompt(prompt: str) -> List[tuple]:
+    """从用户 prompt 提取「任务目标」和「用户偏好」。"""
+    out: List[tuple] = []
+    text = _clean_item(prompt or "")
+    if not text:
+        return out
+    # 任务目标：取首句/前 120 字
+    goal = re.split(r"[。\n]", text, maxsplit=1)[0].strip()
+    if goal:
+        out.append(("任务目标", goal[:120]))
+    for pattern, desc in PREFERENCE_RULES:
+        if re.search(pattern, text):
+            out.append(("用户偏好", desc))
+    return out
+
+
+def distill_file(path: str, content: str) -> List[tuple]:
+    """从 read_file 的路径/内容提取「项目架构」。"""
+    out: List[tuple] = []
+    p = _clean_item(path or "")
+    if p:
+        out.append(("项目架构", "涉及文件: " + p))
+    body = content or ""
+    if body:
+        for pattern, desc in ARCH_RULES:
+            if re.search(pattern, body):
+                out.append(("项目架构", desc))
+    return out
+
+
 def distill_step(action: Dict[str, object], result: Dict[str, object]) -> List[tuple]:
     """返回 [(section, text), ...]。"""
     out: List[tuple] = []
@@ -285,6 +341,7 @@ def distill_step(action: Dict[str, object], result: Dict[str, object]) -> List[t
             out.append(("未完成事项", "读文件失败: " + p + " -> " + _clean_item(str(result.get("error")))))
         else:
             out.append(("已确认事实", "读取文件: " + p + " (" + str(result.get("bytes_read", "?")) + " bytes)"))
+            out.extend(distill_file(p, str(result.get("content") or "")))
     elif name == "self_restart":
         out.append(("关键决策", "执行 self_restart: " + _clean_item(str(action.get("reason", "")))))
     return out

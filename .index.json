@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-19T21:31:37+08:00",
+  "generated_at": "2026-10-19T22:40:46+08:00",
   "project_root": "/my_agent/agent-services",
   "files": {
     "app/__init__.py": {
@@ -495,8 +495,8 @@
       ]
     },
     "app/main.py": {
-      "sha256": "d2d11de31593",
-      "lines": 360,
+      "sha256": "80e40c7c400b",
+      "lines": 369,
       "symbols": [
         {
           "path": "app.main._extract_bearer",
@@ -567,7 +567,7 @@
           "kind": "function",
           "signature": "(action: Dict[str, Any]) -> Dict[str, Any]",
           "line_start": 98,
-          "line_end": 122,
+          "line_end": 128,
           "doc": "",
           "calls": [
             "get",
@@ -575,6 +575,9 @@
             "do_write_file",
             "do_read_file",
             "do_self_restart",
+            "do_read_symbol",
+            "do_read_file_summary",
+            "do_rebuild_index",
             "str",
             "int",
             "type"
@@ -585,8 +588,8 @@
           "name": "_append_event",
           "kind": "function",
           "signature": "(kind: str, message: str) -> None",
-          "line_start": 128,
-          "line_end": 129,
+          "line_start": 134,
+          "line_end": 135,
           "doc": "",
           "calls": [
             "add_event"
@@ -597,8 +600,8 @@
           "name": "agent_loop",
           "kind": "function",
           "signature": "() -> None",
-          "line_start": 132,
-          "line_end": 260,
+          "line_start": 138,
+          "line_end": 266,
           "doc": "自愈循环：每步 try/except，失败转 error 回传模型，有硬性上限。",
           "calls": [
             "time",
@@ -628,8 +631,8 @@
           "name": "index",
           "kind": "function",
           "signature": "() -> FileResponse",
-          "line_start": 263,
-          "line_end": 264,
+          "line_start": 269,
+          "line_end": 270,
           "doc": "",
           "calls": [
             "get",
@@ -642,8 +645,8 @@
           "name": "api_state",
           "kind": "function",
           "signature": "(since: int=0) -> JSONResponse",
-          "line_start": 268,
-          "line_end": 277,
+          "line_start": 274,
+          "line_end": 283,
           "doc": "",
           "calls": [
             "get",
@@ -660,8 +663,8 @@
           "name": "api_chat",
           "kind": "function",
           "signature": "(request: Request) -> JSONResponse",
-          "line_start": 281,
-          "line_end": 304,
+          "line_start": 287,
+          "line_end": 310,
           "doc": "",
           "calls": [
             "post",
@@ -688,8 +691,8 @@
           "name": "api_stop",
           "kind": "function",
           "signature": "() -> JSONResponse",
-          "line_start": 308,
-          "line_end": 312,
+          "line_start": 314,
+          "line_end": 318,
           "doc": "",
           "calls": [
             "post",
@@ -705,8 +708,8 @@
           "name": "api_restart",
           "kind": "function",
           "signature": "() -> JSONResponse",
-          "line_start": 316,
-          "line_end": 321,
+          "line_start": 322,
+          "line_end": 327,
           "doc": "",
           "calls": [
             "post",
@@ -721,8 +724,8 @@
           "name": "api_rollback",
           "kind": "function",
           "signature": "() -> JSONResponse",
-          "line_start": 325,
-          "line_end": 330,
+          "line_start": 331,
+          "line_end": 336,
           "doc": "",
           "calls": [
             "post",
@@ -737,8 +740,8 @@
           "name": "_startup",
           "kind": "function",
           "signature": "() -> None",
-          "line_start": 336,
-          "line_end": 342,
+          "line_start": 342,
+          "line_end": 348,
           "doc": "",
           "calls": [
             "ensure_dirs",
@@ -1022,6 +1025,54 @@
           "calls": [
             "distill_step",
             "add_item"
+          ]
+        }
+      ]
+    },
+    "app/memory_api.py": {
+      "sha256": "baf067e54694",
+      "lines": 64,
+      "symbols": [
+        {
+          "path": "app.memory_api._summary",
+          "name": "_summary",
+          "kind": "function",
+          "signature": "(conv_id: str) -> Dict[str, Any]",
+          "line_start": 12,
+          "line_end": 35,
+          "doc": "",
+          "calls": [
+            "load",
+            "dict",
+            "items",
+            "path_for",
+            "len",
+            "getsize",
+            "get"
+          ]
+        },
+        {
+          "path": "app.memory_api.register",
+          "name": "register",
+          "kind": "function",
+          "signature": "(app: FastAPI, require_token) -> None",
+          "line_start": 38,
+          "line_end": 64,
+          "doc": "",
+          "calls": [
+            "get",
+            "list_convs",
+            "sort",
+            "JSONResponse",
+            "_safe_conv_id",
+            "load",
+            "HTTPException",
+            "isfile",
+            "append",
+            "Depends",
+            "path_for",
+            "read_text",
+            "_summary"
           ]
         }
       ]
