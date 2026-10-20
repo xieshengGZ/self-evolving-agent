@@ -251,6 +251,33 @@
     display: inline-block; margin-top: 6px; font-size: 11px; color: #93c5fd;
     cursor: pointer; user-select: none;
   }
+  .msg .content pre.plain {
+    margin: 0; white-space: pre-wrap; word-break: break-word;
+    font-family: inherit; font-size: inherit; line-height: 1.55;
+  }
+  .act-head { margin-bottom: 6px; }
+  .badge {
+    display: inline-block; padding: 1px 7px; margin-right: 6px; border-radius: 999px;
+    font-size: 11px; font-family: ui-monospace, Menlo, monospace;
+    background: #334155; color: #e2e8f0;
+  }
+  .badge.act { background: #1d4ed8; }
+  .badge.res { background: #047857; }
+  .badge.err { background: #b91c1c; }
+  .badge.exit { background: #475569; }
+  .kv { display: flex; gap: 8px; font-size: 12.5px; padding: 1px 0; }
+  .kv .k { color: #94a3b8; min-width: 96px; flex: 0 0 auto; }
+  .kv .v { color: #e5e7eb; word-break: break-word; }
+  .kv .v.mono { font-family: ui-monospace, Menlo, monospace; }
+  .blk { margin: 6px 0; }
+  .blk-title { font-size: 11px; color: #94a3b8; margin-bottom: 2px; }
+  .blk-body {
+    margin: 0; padding: 8px 10px; border-radius: 6px; background: #0b1220;
+    color: #d1d5db; font-size: 12px; line-height: 1.5;
+    white-space: pre-wrap; word-break: break-word; overflow-x: auto;
+    max-height: 420px; overflow-y: auto;
+  }
+  .blk-body.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .empty-hint { color: #6b7280; text-align: center; margin-top: 40px; font-size: 13px; }
 
   /* 事件日志 */
@@ -316,6 +343,7 @@
   <button id="logBtn" class="secondary">日志</button>
   <button id="memoryBtn" class="secondary">记忆</button>
   <button id="contextBtn" class="secondary">上下文</button>
+  <button id="clearBtn" class="secondary">清空历史</button>
   <button id="stopBtn" class="danger">停止</button>
   <button id="restartBtn" class="secondary">重启</button>
   <button id="rollbackBtn" class="secondary">回滚</button>
@@ -383,7 +411,8 @@
     memoryList: document.getElementById("memoryList"),
     memoryDetail: document.getElementById("memoryDetail"),
     contextBtn: document.getElementById("contextBtn"),
-    contextBody: document.getElementById("contextBody")
+    contextBody: document.getElementById("contextBody"),
+    clearBtn: document.getElementById("clearBtn")
   };
 
   function getToken() { return (el.token.value || "").trim(); }
@@ -445,6 +474,95 @@
     box.scrollTop = box.scrollHeight;
   }
 
+  // ---------- 内容渲染：JSON 动作/结果结构化展示，普通文本保留换行 ----------
+  function tryParseJSON(text) {
+    var t = (text || "").trim();
+    if (!t) return null;
+    if (t.charAt(0) !== "{" && t.charAt(0) !== "[") return null;
+    try { return JSON.parse(t); } catch (e) { return null; }
+  }
+
+  function mkEl(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function addKV(box, key, value, mono) {
+    var row = mkEl("div", "kv");
+    row.appendChild(mkEl("span", "k", key));
+    row.appendChild(mkEl("span", "v" + (mono ? " mono" : ""), value));
+    box.appendChild(row);
+  }
+
+  function addBlock(box, title, text, mono) {
+    if (text == null || text === "") return;
+    var wrap = mkEl("div", "blk");
+    wrap.appendChild(mkEl("div", "blk-title", title));
+    wrap.appendChild(mkEl("pre", "blk-body" + (mono ? " mono" : ""), String(text)));
+    box.appendChild(wrap);
+  }
+
+  function renderAction(box, obj) {
+    var head = mkEl("div", "act-head");
+    head.appendChild(mkEl("span", "badge act", obj.action || "?"));
+    box.appendChild(head);
+    var keys = Object.keys(obj);
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      if (k === "action") continue;
+      var v = obj[k];
+      if (v == null) continue;
+      if (typeof v === "string" && v.indexOf("\n") >= 0) {
+        addBlock(box, k, v, k === "command" || k === "content");
+      } else if (typeof v === "object") {
+        addBlock(box, k, JSON.stringify(v, null, 2), true);
+      } else {
+        addKV(box, k, String(v), k === "command");
+      }
+    }
+  }
+
+  function renderResult(box, obj) {
+    var head = mkEl("div", "act-head");
+    var kind = obj.result_of || (obj.error ? "error" : "result");
+    head.appendChild(mkEl("span", "badge " + (obj.error ? "err" : "res"), kind));
+    if (obj.exit_code != null) head.appendChild(mkEl("span", "badge exit", "exit " + obj.exit_code));
+    if (obj.timed_out) head.appendChild(mkEl("span", "badge err", "timeout"));
+    box.appendChild(head);
+
+    if (obj.error) addBlock(box, "error", obj.error, false);
+    if (obj.command) addBlock(box, "command", obj.command, true);
+    if (obj.path) addKV(box, "path", String(obj.path), true);
+    if (obj.bytes_written != null) addKV(box, "bytes_written", String(obj.bytes_written), false);
+    if (obj.bytes_read != null) addKV(box, "bytes_read", String(obj.bytes_read), false);
+    if (obj.stdout) addBlock(box, "stdout", obj.stdout, true);
+    if (obj.stderr) addBlock(box, "stderr", obj.stderr, true);
+    if (obj.content && !obj.stdout) addBlock(box, "content", obj.content, true);
+
+    var skip = { result_of: 1, error: 1, command: 1, path: 1, bytes_written: 1, bytes_read: 1,
+                 stdout: 1, stderr: 1, content: 1, exit_code: 1, timed_out: 1 };
+    var keys = Object.keys(obj);
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      if (skip[k]) continue;
+      var v = obj[k];
+      if (v == null) continue;
+      if (typeof v === "object") addBlock(box, k, JSON.stringify(v, null, 2), true);
+      else addKV(box, k, String(v), false);
+    }
+  }
+
+  function renderContent(container, content, role) {
+    var obj = tryParseJSON(content);
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      if (obj.action) { renderAction(container, obj); return; }
+      if (obj.result_of || obj.error) { renderResult(container, obj); return; }
+    }
+    container.appendChild(mkEl("pre", "plain", content));
+  }
+
   function renderHistory() {
     var box = el.history;
     var list = state.history || [];
@@ -473,7 +591,7 @@
       var content = typeof m.content === "string" ? m.content : JSON.stringify(m.content, null, 2);
       var cdiv = document.createElement("div");
       cdiv.className = "content";
-      cdiv.textContent = content;
+      renderContent(cdiv, content, m.role);
 
       var long = content.length > COLLAPSE_CHARS;
       var expanded = !!state.expanded[i];
@@ -757,6 +875,19 @@
       .catch(function (err) { el.contextBody.textContent = "加载失败: " + err.message; });
   }
 
+  function doClear() {
+    if (!confirm("确认清空当前对话历史？旧窗口会归档到 state/archive。")) return;
+    postJSON("/api/clear", {})
+      .then(function () {
+        state.history = [];
+        state.eventsSince = 0;
+        renderHistory();
+        setHint("历史已清空");
+        fetchState();
+      })
+      .catch(function (err) { setHint("清空失败: " + err.message, true); });
+  }
+
   function toggleContext() {
     document.body.classList.remove("show-log");
     document.body.classList.remove("show-memory");
@@ -773,6 +904,7 @@
     el.logBtn.addEventListener("click", toggleLog);
     el.memoryBtn.addEventListener("click", toggleMemory);
     el.contextBtn.addEventListener("click", toggleContext);
+    el.clearBtn.addEventListener("click", doClear);
     el.prompt.addEventListener("keydown", function (e) {
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
         e.preventDefault();

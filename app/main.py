@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import actions, config, deepseek, selfupdate, session
+from app import actions, classifier, config, deepseek, selfupdate, session
 
 app = FastAPI(title="agent-services")
 
@@ -141,6 +141,8 @@ def agent_loop() -> None:
     steps = 0
     fails = 0
     started = _t.time()
+    last_action_str = ""
+    repeat_count = 0
 
     def _fail(msg: str) -> None:
         try:
@@ -204,6 +206,16 @@ def agent_loop() -> None:
                 _fail("无法解析为 JSON 动作，请只返回一个 JSON 对象，不要加解释或围栏")
                 continue
             fails = 0
+
+            _act_str = json.dumps(action, ensure_ascii=False, sort_keys=True)
+            if _act_str == last_action_str:
+                repeat_count += 1
+            else:
+                last_action_str = _act_str
+                repeat_count = 0
+            if repeat_count >= 3:
+                _append_event("error", "连续 3 次相同动作，强制终止")
+                break
 
             name = action.get("action")
             _append_event("action", json.dumps(action, ensure_ascii=False)[:2000])
@@ -283,6 +295,21 @@ def api_state(since: int = 0) -> JSONResponse:
     )
 
 
+@app.post("/api/clear", dependencies=[Depends(require_token)])
+def api_clear() -> JSONResponse:
+    """清空当前对话窗口与事件日志（归档旧窗口后开新会话）。"""
+    if session.get_status() == "running":
+        raise HTTPException(status_code=409, detail="agent is running")
+    try:
+        session.new_conversation("")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"清空失败: {e}")
+    session.clear_events()
+    session.add_event("system", "历史对话已清空")
+    session.persist()
+    return JSONResponse({"ok": True, "conv_id": session.get_conv_id()})
+
+
 @app.get("/api/context", dependencies=[Depends(require_token)])
 def api_context() -> JSONResponse:
     """展示下一次调用 DeepSeek 时 messages 的拼接明细。"""
@@ -323,6 +350,24 @@ async def api_chat(request: Request) -> JSONResponse:
     except Exception:
         pass
     session.add_event("user", prompt)
+
+    mode = classifier.classify(prompt)
+    if mode == "chat":
+        try:
+            session.add_event("info", "闲聊模式")
+            msgs = session.build_messages(load_system_prompt())
+            reply = deepseek.chat(msgs)
+            if isinstance(reply, dict):
+                reply = reply.get("message") or reply.get("content") or str(reply)
+            session.append_history("assistant", str(reply))
+            session.add_event("assistant", str(reply))
+        except Exception as e:
+            session.add_event("error", f"chat 失败: {e}")
+            session.append_history("assistant", f"[error] {e}")
+        session.set_status("idle")
+        session.persist()
+        return JSONResponse({"mode": "chat", "ok": True})
+
     session.set_status("running")
     session.clear_cancel()
     session.persist()

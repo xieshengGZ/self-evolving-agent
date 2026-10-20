@@ -30,6 +30,7 @@
 - 只存提炼后的知识，不存原始对话/命令输出。
 - 写入去重，单文件有上限，超出时保留最新条目。
 - 读取时返回完整 Markdown 文本，供拼进 system 上下文。
+- 工具调用流水（shell/read_file/write_file）不写入记忆，只保留失败项。
 """
 
 import os
@@ -316,34 +317,42 @@ def distill_file(path: str, content: str) -> List[tuple]:
 
 
 def distill_step(action: Dict[str, object], result: Dict[str, object]) -> List[tuple]:
-    """返回 [(section, text), ...]。"""
+    """把一步动作+结果提炼成高价值知识。
+
+    只保留：
+    - 失败/报错 -> 「未完成事项」
+    - self_restart -> 「关键决策」
+    - 读文件时识别出的项目架构特征 -> 「项目架构」
+    常规 shell/read_file/write_file 成功流水一律不写入记忆。
+    """
     out: List[tuple] = []
     if not isinstance(action, dict) or not isinstance(result, dict):
         return out
     name = action.get("action")
+    err = result.get("error")
 
-    if name == "shell":
-        cmd = _clean_item(str(action.get("command", "")))
-        if result.get("error"):
-            out.append(("未完成事项", "shell 失败: " + cmd + " -> " + _clean_item(str(result.get("error")))))
-        else:
-            code = result.get("exit_code")
-            out.append(("已确认事实", "执行 shell: " + cmd + " (exit=" + str(code) + ")"))
-    elif name == "write_file":
-        p = str(result.get("path") or action.get("path") or "")
-        if result.get("error"):
-            out.append(("未完成事项", "写文件失败: " + p + " -> " + _clean_item(str(result.get("error")))))
-        else:
-            out.append(("已确认事实", "写入文件: " + p + " (" + str(result.get("bytes_written", "?")) + " bytes)"))
+    if err:
+        detail = _clean_item(str(err))
+        if name == "shell":
+            cmd = _clean_item(str(action.get("command", "")))
+            out.append(("未完成事项", "shell 失败: " + cmd + " -> " + detail))
+        elif name == "write_file":
+            p = str(result.get("path") or action.get("path") or "")
+            out.append(("未完成事项", "写文件失败: " + p + " -> " + detail))
+        elif name == "read_file":
+            p = str(result.get("path") or action.get("path") or "")
+            out.append(("未完成事项", "读文件失败: " + p + " -> " + detail))
+        elif name == "self_restart":
+            out.append(("未完成事项", "重启失败: " + detail))
+        return out
+
+    if name == "self_restart":
+        reason = _clean_item(str(action.get("reason", "")))
+        if reason:
+            out.append(("关键决策", "执行 self_restart: " + reason))
     elif name == "read_file":
         p = str(result.get("path") or action.get("path") or "")
-        if result.get("error"):
-            out.append(("未完成事项", "读文件失败: " + p + " -> " + _clean_item(str(result.get("error")))))
-        else:
-            out.append(("已确认事实", "读取文件: " + p + " (" + str(result.get("bytes_read", "?")) + " bytes)"))
-            out.extend(distill_file(p, str(result.get("content") or "")))
-    elif name == "self_restart":
-        out.append(("关键决策", "执行 self_restart: " + _clean_item(str(action.get("reason", "")))))
+        out.extend(distill_file(p, str(result.get("content") or "")))
     return out
 
 

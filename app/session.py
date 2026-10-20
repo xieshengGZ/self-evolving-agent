@@ -242,6 +242,11 @@ def get_history() -> List[Dict[str, str]]:
         return list(_default.history)
 
 
+def clear_events() -> None:
+    with _default.lock:
+        _default.events = []
+
+
 def get_events(since: int = 0) -> List[Dict[str, Any]]:
     with _default.lock:
         return list(_default.events[since:]) if since >= 0 else list(_default.events)
@@ -358,3 +363,7 @@ def clear_current_process(proc=None) -> None:
 
 def save() -> None:
     _default.persist()
+
+
+def set_task(task: str) -> None:
+    _default.set_task(task)
