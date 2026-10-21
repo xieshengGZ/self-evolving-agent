@@ -1,12 +1,12 @@
 """规则对话分类器：0 成本区分闲聊和任务。"""
 import re
 
+# 只匹配纯问候/纯确认，不匹配带指令的长句
 CHAT_PATTERNS = [
     r"^(你好|hi|hello|在吗|嗨|哈喽|早上好|晚上好)[\s!！。？?]*$",
     r"^(你是谁|你叫什么|你能做什么|介绍一下你自己|你能干啥)[\s?？。]*$",
     r"^(谢谢|thanks|thx|好的|ok|嗯|收到|明白)[\s!！。]*$",
     r"^(再见|拜拜|bye|晚安)[\s!！。]*$",
-    r"^[?？!！。\s]*$",
 ]
 
 TASK_VERBS = [
@@ -18,7 +18,6 @@ TASK_VERBS = [
 
 
 def classify(text: str) -> str:
-    """返回 'chat' 或 'task'。规则判断，0 成本。"""
     if not isinstance(text, str):
         return "task"
     s = text.strip()
@@ -31,6 +30,5 @@ def classify(text: str) -> str:
     for verb in TASK_VERBS:
         if verb in low:
             return "task"
-    if len(s) > 30:
-        return "task"
+    # 默认 task，宁多跑不要漏跑
     return "task"

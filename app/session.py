@@ -26,6 +26,7 @@ class Session:
         self.current_proc = None
         self.conv_id: str = ""
         self.task: str = ""
+        self.task_state: Dict[str, Any] = {}
         self.lock = threading.RLock()
 
     # ---------------- events ----------------
@@ -71,6 +72,7 @@ class Session:
             old_conv = self.conv_id
             self.history = []
             self.task = task or ""
+            self.task_state = {}
             self.conv_id = memory.new_conv_id()
         if old:
             try:
@@ -104,6 +106,10 @@ class Session:
             })
         if self.task:
             messages.append({"role": "user", "content": "当前任务：" + self.task})
+        with self.lock:
+            _ts = dict(self.task_state) if self.task_state else {}
+        if _ts.get("plan_text"):
+            messages.append({"role": "system", "content": "## 执行计划\n" + _ts["plan_text"]})
         with self.lock:
             messages.extend(list(self.history))
         return messages
@@ -155,6 +161,7 @@ class Session:
                 "status": self.status,
                 "conv_id": self.conv_id,
                 "task": self.task,
+                "task_state": dict(self.task_state),
             }
 
     def persist(self) -> None:
@@ -193,6 +200,8 @@ class Session:
             self.events = (data.get("events", []) or [])[-500:]
             self.conv_id = data.get("conv_id", "") or ""
             self.task = data.get("task", "") or ""
+            _ts_state = data.get("task_state", {})
+            self.task_state = _ts_state if isinstance(_ts_state, dict) else {}
             status = data.get("status", "idle")
             if status == "running":
                 self.status = "idle"
@@ -294,6 +303,16 @@ def build_messages(system_prompt: str) -> List[Dict[str, str]]:
 def get_task() -> str:
     with _default.lock:
         return _default.task
+
+
+def get_task_state() -> Dict[str, Any]:
+    with _default.lock:
+        return dict(_default.task_state)
+
+
+def set_task_state(state: Dict[str, Any]) -> None:
+    with _default.lock:
+        _default.task_state = dict(state or {})
 
 
 def build_context_preview(system_prompt: str) -> Dict[str, Any]:

@@ -101,6 +101,19 @@ def chat(messages: list[dict[str, str]]) -> dict[str, Any]:
     except (KeyError, IndexError, ValueError) as exc:
         raise DeepSeekError(f"DeepSeek 响应格式异常: {_redact(str(exc))}") from exc
 
+    # 记录 token 消耗（失败不影响主流程）
+    try:
+        from app import usage as _usage
+        _conv = ""
+        try:
+            from app import session as _session
+            _conv = _session.get_conv_id()
+        except Exception:
+            _conv = ""
+        _usage.record(data.get("usage"), conv_id=_conv, source="chat")
+    except Exception:
+        pass
+
     if not isinstance(content, str):
         raise DeepSeekError("DeepSeek 返回内容不是字符串")
 

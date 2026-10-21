@@ -139,6 +139,29 @@ def agent_loop() -> None:
     """自愈循环：每步 try/except，失败转 error 回传模型，有硬性上限。"""
     import time as _t
     steps = 0
+
+    if config.AGENT_ENABLE_PLANNER:
+        try:
+            _st = session.get_task_state() or {}
+        except Exception:
+            _st = {}
+        if not _st.get("plan"):
+            _tk = session.get_task()
+            if _tk and _tk.strip():
+                try:
+                    from app import planner as _planner
+                    _pl = _planner.plan(_tk)
+                    if "error" in _pl:
+                        _append_event("warn", "规划失败降级：" + _pl["error"])
+                    else:
+                        _st["plan"] = _pl["steps"]
+                        _st["plan_text"] = _planner.format_plan_text(_pl["steps"])
+                        _st["current"] = 0
+                        _st["task"] = _tk
+                        session.set_task_state(_st)
+                        _append_event("plan", "已规划 " + str(len(_pl["steps"])) + " 步")
+                except Exception as e:
+                    _append_event("warn", "规划异常降级：" + str(e))
     fails = 0
     started = _t.time()
     last_action_str = ""
@@ -345,6 +368,8 @@ async def api_chat(request: Request) -> JSONResponse:
             session.append_history("user", prompt)
     else:
         session.append_history("user", prompt)
+        if prompt and prompt.strip():
+            session.set_task(prompt)
     try:
         session.record_prompt(prompt)
     except Exception:
@@ -392,6 +417,24 @@ def api_restart() -> JSONResponse:
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     return JSONResponse({"ok": True})
+
+
+@app.get("/api/usage", dependencies=[Depends(require_token)])
+def api_usage(conv_id: str = "", limit: int = 50) -> JSONResponse:
+    """Token 消耗统计：全局 + 当前会话 + 最近调用记录。"""
+    from app import usage as _usage
+    cid = conv_id or session.get_conv_id()
+    try:
+        data = _usage.summary(conv_id=cid, limit=max(1, min(limit, 500)))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"统计失败: {e}")
+    return JSONResponse(data)
+
+
+@app.post("/api/usage/reset", dependencies=[Depends(require_token)])
+def api_usage_reset() -> JSONResponse:
+    from app import usage as _usage
+    return JSONResponse(_usage.reset())
 
 
 @app.post("/api/rollback", dependencies=[Depends(require_token)])
