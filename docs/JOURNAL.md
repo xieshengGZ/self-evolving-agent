@@ -62,3 +62,33 @@
 
 - Phase 2：`planning` 插件与状态机。
 - 部署：线上 `agent-services` 于 15:33 由外部启动；已验证 `/api/events`、`state/agent.db` 和旧数据迁移，无需再安排停服窗口。
+
+## 2026-10-21 — Phase 2 规划插件与状态机
+
+**改了什么**
+
+- 新增 `app/planning.py`：`Plan`/`PlanStep`、合法状态迁移、SQLite/session 双写、重启恢复、重规划上限、确定性验收（文件/内容/命令/退出码/manual）。
+- 新增 `plugins/planning`：LLM 规划器 `create/revise`，注册 `ctx.planners.default`；HTTP `status/reset`。
+- 新增 `plugins/classifier`：通过 `classify.prompt` hook 返回 `chat/task/continuation/control`；`app/classifier.py` 保留规则兜底。
+- 改写 `app/kernel/loop.py`：启动/恢复计划、逐步记录、连续失败/重复动作/验收失败触发重规划、`done` 前强制验收。
+- 改写 `app/main.py` 路由：新任务清旧计划，`continuation` 保留计划，`control` 支持 stop/status/restart，`/api/state` 暴露 `plan/plan_text`。
+- `plans` schema v2：新增 `acceptance/current_step/revision`，启动自动补列；`Store` 增加 `update_plan/get_plan`。
+- `session` 补 `snapshot` 与 getter。
+- 配置新增 `AGENT_MAX_REPLANS=2`、`AGENT_PLAN_MAX_STEPS=8`。
+- 修复：计划保存时先拿 DB id 再写 state；恢复时跳过终态计划；补齐 `KernelRuntime.emit_hook`；补插件 README；移除 `/api/stop` 对不存在函数的调用。
+
+**为什么**
+
+- Phase 1 的计划是 loop 内联、未类型化，失败只能整轮重来，重启无法恢复。
+- 将“LLM 怎么规划”放插件、“计划合法性与验收”放内核，既支持热替换，也保证状态机一致。
+
+**验证**
+
+- `make check`：40 passed，`compileall` 通过。
+- 单测覆盖：Plan/Step JSON、状态迁移、文件/命令验收、plans 持久化、真实插件加载、classifier hook、loop 创建-执行-验收-重规划、running 状态 control。
+- 临时根目录 E2E：4 插件加载；`planning.status`、`/api/chat` control 路由、`/api/state.plan` 均正常。
+- 线上服务 idle 后重启；4 插件加载，plans 表自动补 `acceptance/current_step/revision`（schema v2），SSE 200。
+
+**下一步**
+
+- Phase 3：上下文插件（Section + token 预算 + artifact 卸载）。

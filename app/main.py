@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
-from app import actions, classifier, config, deepseek, selfupdate, session
+from app import classifier, config, deepseek, planning, selfupdate, session
 from app.kernel import get_runtime
 from app.kernel.http import register_plugin_routes
 from app.kernel.loop import agent_loop, load_system_prompt
@@ -85,6 +85,8 @@ def api_state(since: int = 0, since_id: Optional[int] = None) -> JSONResponse:
             "last_event_id": session.last_event_id(),
             "conv_id": session.get_conv_id(),
             "task": session.get_task(),
+            "plan": (session.get_task_state() or {}).get("plan"),
+            "plan_text": (session.get_task_state() or {}).get("plan_text", ""),
         }
     )
 
@@ -94,6 +96,10 @@ def api_clear() -> JSONResponse:
     """清空当前对话窗口与事件日志（归档旧窗口后开新会话）。"""
     if session.get_status() == "running":
         raise HTTPException(status_code=409, detail="agent is running")
+    try:
+        planning.clear_plan("clear")
+    except Exception:  # noqa: BLE001
+        pass
     try:
         session.new_conversation("")
     except Exception as e:
@@ -119,6 +125,42 @@ def api_context() -> JSONResponse:
     return JSONResponse({"ok": True, **data})
 
 
+def _handle_control(prompt: str) -> JSONResponse:
+    value = prompt.strip()
+    low = value.lower()
+    stop_words = {"停止", "停下", "停", "取消", "中断", "终止", "别做了", "stop", "cancel", "abort"}
+    status_words = {"状态", "进度", "进展", "现在什么状态", "当前状态", "status"}
+    restart_words = {"重启", "重新启动", "restart", "reload"}
+
+    if value in stop_words or low in stop_words:
+        session.request_cancel()
+        session.add_event("info", "收到停止请求")
+        return JSONResponse({"mode": "control", "action": "stop", "ok": True})
+
+    if value in status_words or low in status_words:
+        return JSONResponse(
+            {
+                "mode": "control",
+                "action": "status",
+                "ok": True,
+                "state": session.snapshot(),
+                "plan": planning.snapshot(),
+            }
+        )
+
+    if value in restart_words or low in restart_words:
+        try:
+            selfupdate.self_restart(reason="control: " + value)
+        except Exception as e:  # noqa: BLE001
+            return JSONResponse(
+                {"mode": "control", "action": "restart", "ok": False, "error": str(e)},
+                status_code=500,
+            )
+        return JSONResponse({"mode": "control", "action": "restart", "ok": True})
+
+    return JSONResponse({"mode": "control", "action": "noop", "ok": True})
+
+
 @app.post("/api/chat", dependencies=[Depends(require_token)])
 async def api_chat(request: Request) -> JSONResponse:
     try:
@@ -129,25 +171,46 @@ async def api_chat(request: Request) -> JSONResponse:
     if not isinstance(prompt, str) or not prompt.strip():
         raise HTTPException(status_code=400, detail="prompt required")
 
+    mode = classifier.classify(prompt)
+    if mode == "control":
+        return _handle_control(prompt)
+
     if session.get_status() == "running":
         raise HTTPException(status_code=409, detail="agent is running")
 
     if (body or {}).get("new_conversation") is True:
         try:
-            session.new_conversation(prompt)
+            planning.clear_plan("new conversation")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            session.new_conversation(prompt if mode in ("task", "continuation") else "")
         except Exception:
             session.append_history("user", prompt)
     else:
         session.append_history("user", prompt)
-        if prompt and prompt.strip():
+
+    if mode == "task":
+        old_task = (session.get_task() or "").strip()
+        new_task = prompt.strip()
+        if old_task and old_task != new_task:
+            try:
+                planning.clear_plan("new task")
+                session.add_event("info", "检测到新任务，已重置旧计划")
+            except Exception:  # noqa: BLE001
+                pass
+        session.set_task(prompt)
+    elif mode == "continuation":
+        if not (session.get_task() or "").strip():
             session.set_task(prompt)
+        session.add_event("info", "继续当前任务")
+
     try:
         session.record_prompt(prompt)
     except Exception:
         pass
     session.add_event("user", prompt)
 
-    mode = classifier.classify(prompt)
     if mode == "chat":
         try:
             session.add_event("info", "闲聊模式")
@@ -170,13 +233,12 @@ async def api_chat(request: Request) -> JSONResponse:
 
     thread = threading.Thread(target=agent_loop, daemon=True)
     thread.start()
-    return JSONResponse({"ok": True, "status": "running"})
+    return JSONResponse({"mode": mode, "ok": True, "status": "running"})
 
 
 @app.post("/api/stop", dependencies=[Depends(require_token)])
 def api_stop() -> JSONResponse:
     session.request_cancel()
-    actions.kill_current_process()
     session.add_event("info", "收到停止请求")
     return JSONResponse({"ok": True})
 

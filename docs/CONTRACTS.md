@@ -56,7 +56,7 @@ def teardown(ctx: PluginContext) -> None:      # 可选
 | `ctx.tools` | `ToolRegistry` | 注册模型可调用的工具 |
 | `ctx.hooks` | `HookBus` | 订阅/发布生命周期事件 |
 | `ctx.http` | `HttpRegistry` | 注册 `/api/plugin/{name}/{op}` 处理器 |
-| `ctx.planners` | `PlannerRegistry` | 注册任务规划器（Phase 2） |
+| `ctx.planners` | `PlannerRegistry` | 注册任务规划器（默认名 `default`） |
 | `ctx.context` | `ContextRegistry` | 注册上下文构建器（Phase 3） |
 | `ctx.store` | `Store` | 读写会话/事件/状态，查询 SQLite |
 | `ctx.bus` | `EventBus` | 进程内事件 |
@@ -80,6 +80,50 @@ def handler(payload: dict) -> dict:
 - 同名工具后加载的插件覆盖先加载的。
 - 未注册的动作返回 `{"error": "unknown action: <name>"}`。
 - handler 抛出的异常会被内核捕获并转为 `{"error": "..."}`。
+
+## 规划器（Planner）
+
+`app/planning.py` 持有 `Plan` / `PlanStep`、状态机、验收器和持久化；
+规划器插件只负责把任务变成计划。注册默认规划器：
+
+```python
+class Planner:
+    def create(self, task: str, actions: list[str] | None = None) -> dict:
+        return {"reasoning": "...", "acceptance": [...], "steps": [...]}
+
+    def revise(self, plan: dict, feedback: str, actions: list[str] | None = None) -> dict:
+        return {...}
+
+ctx.planners.register("default", Planner())
+```
+
+`create` / `revise` 返回的 dict 必须包含非空 `steps`；每步字段：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `id` | 否 | 整数，重复时自动重排 |
+| `action` | 是 | 来自当前 `ctx.tools` 的动作名 |
+| `args` | 否 | 工具参数对象 |
+| `expected` | 否 | 一句话验收目标 |
+| `acceptance` | 否 | 确定性检查列表 |
+| `depends_on` | 否 | 依赖步骤 id（当前只展示，不调度） |
+
+计划状态由内核维护：`planning → executing → verifying → done/replan`，
+失败/取消为 `failed/cancelled`。返回 `{"error": "..."}` 视为规划失败，内核降级为无计划执行。
+
+确定性验收 `acceptance` 支持：
+
+```json
+{"kind": "file_exists", "path": "dist/app.js"}
+{"kind": "file_not_empty", "path": "out.log", "min_bytes": 10}
+{"kind": "contains", "path": "report.md", "text": "PASS"}
+{"kind": "test", "command": "pytest -q", "timeout": 120}
+{"kind": "exit_code", "command": "systemctl is-active agent-services", "expected_code": 0}
+{"kind": "manual", "text": "人工确认界面效果"}
+```
+
+`command` / `test` / `exit_code` 在 `AGENT_ROOT` 下执行，受 `AGENT_CMD_TIMEOUT` 与危险命令拦截约束。
+没有验收项时，计划完成视为通过；需要强保证时请写验收项。
 
 ## HTTP op
 
@@ -119,11 +163,15 @@ Content-Type: application/json
 | `get_conv_id()` / `new_conversation(task)` | 会话切换 |
 | `get_task()` / `set_task()` / `get_task_state()` / `set_task_state()` | 任务与计划状态 |
 | `list_sessions(limit=50)` | 最近会话（SQLite） |
-| `save_plan(conv_id, goal, steps, status)` / `get_plans(conv_id)` | 计划持久化（Phase 2 使用） |
+| `save_plan(...)` / `update_plan(id, ...)` / `get_plan(id)` / `get_plans(conv_id)` | 计划持久化与查询 |
 | `db_path()` | 当前数据库路径 |
 
 约定：`add_event` / `append_history` 立即持久化；`set_status` / `set_task` /
 `set_task_state` 会同步会话元数据；`persist()` 仍可显式刷一次。
+
+`plans` 表列：`id` / `conv_id` / `goal` / `status` / `steps`(JSON) / `acceptance`(JSON) /
+`current_step` / `revision` / `created_at` / `updated_at`。`steps` 内保留
+`action` / `args` / `expected` / `acceptance` / `depends_on` / `status` / `evidence` / `attempts`。
 
 ## HTTP 事件流（SSE）
 
@@ -149,9 +197,10 @@ def handler(**kwargs): ...
 |---|---|
 | `kernel.started` | 内核启动完成 |
 | `plugin.loaded` / `plugin.unloaded` | 插件生命周期 |
+| `classify.prompt` | 分类用户输入；返回 `chat/task/continuation/control` |
 | `before_step` | 每次模型调用前 |
 | `after_step` | 工具执行并记录后 |
-| `plan.created` / `plan.revised` | Phase 2 |
+| `plan.created` / `plan.revised` | 计划创建/重规划后 |
 | `context.built` | Phase 3 |
 
 钩子异常会被记录，不影响主流程。

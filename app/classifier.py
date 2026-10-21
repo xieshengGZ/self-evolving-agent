@@ -1,7 +1,24 @@
-"""规则对话分类器：0 成本区分闲聊和任务。"""
-import re
+"""Prompt classification with plugin hook + rule fallback.
 
-# 只匹配纯问候/纯确认，不匹配带指令的长句
+The `classifier` plugin is preferred. If it is disabled, missing, or throws,
+these rules keep the chat/task split working with zero extra API cost.
+"""
+import re
+from typing import Any
+
+MODES = {"chat", "task", "continuation", "control"}
+
+CONTROL_PATTERNS = [
+    r"^(停止|停下|停|取消|中断|终止|别做了|stop|cancel|abort)$",
+    r"^(状态|进度|进展|现在什么状态|当前状态|status)$",
+    r"^(重启|重新启动|restart|reload)$",
+]
+
+CONTINUATION_PATTERNS = [
+    r"^(继续|接着|往下|下一步|然后呢|go\s*on|continue|resume)",
+    r"^(接着做|继续做|继续执行|继续刚才)",
+]
+
 CHAT_PATTERNS = [
     r"^(你好|hi|hello|在吗|嗨|哈喽|早上好|晚上好)[\s!！。？?]*$",
     r"^(你是谁|你叫什么|你能做什么|介绍一下你自己|你能干啥)[\s?？。]*$",
@@ -17,18 +34,35 @@ TASK_VERBS = [
 ]
 
 
-def classify(text: str) -> str:
+def _match(patterns, text: str) -> bool:
+    return any(re.match(pattern, text, re.I) for pattern in patterns)
+
+
+def _rules(text: Any) -> str:
     if not isinstance(text, str):
         return "task"
-    s = text.strip()
-    if not s:
+    value = text.strip()
+    if not value:
         return "chat"
-    for pat in CHAT_PATTERNS:
-        if re.match(pat, s, re.I):
-            return "chat"
-    low = s.lower()
-    for verb in TASK_VERBS:
-        if verb in low:
-            return "task"
-    # 默认 task，宁多跑不要漏跑
+    if _match(CONTROL_PATTERNS, value):
+        return "control"
+    if _match(CONTINUATION_PATTERNS, value):
+        return "continuation"
+    if _match(CHAT_PATTERNS, value):
+        return "chat"
+    low = value.lower()
+    if any(verb in low for verb in TASK_VERBS):
+        return "task"
     return "task"
+
+
+def classify(text: Any) -> str:
+    try:
+        from app.kernel import get_runtime
+
+        for result in get_runtime().emit_hook("classify.prompt", text=text):
+            if isinstance(result, str) and result in MODES:
+                return result
+    except Exception:  # noqa: BLE001
+        pass
+    return _rules(text)

@@ -112,3 +112,34 @@ def test_migrate_skips_when_database_has_data(tmp_path):
     assert result["migrated"] is False
     assert "already has sessions" in result["reason"]
     assert db.totals()["messages"] == 0
+
+
+def test_plan_acceptance_and_update(tmp_path):
+    db = Storage(tmp_path / "agent.db")
+    db.init()
+    db.create_session("conv-plan")
+
+    plan_id = db.save_plan(
+        "conv-plan",
+        "ship it",
+        [{"id": 1, "status": "pending"}],
+        "executing",
+        acceptance=[{"kind": "file_exists", "path": "/tmp/x"}],
+        current_step=0,
+        revision=1,
+    )
+    plan = db.get_plan(plan_id)
+    assert plan["acceptance"] == [{"kind": "file_exists", "path": "/tmp/x"}]
+    assert plan["revision"] == 1
+
+    db.update_plan(
+        plan_id,
+        status="done",
+        steps=[{"id": 1, "status": "done"}],
+        current_step=1,
+    )
+    updated = db.get_plan(plan_id)
+    assert updated["status"] == "done"
+    assert updated["steps"] == [{"id": 1, "status": "done"}]
+    assert updated["current_step"] == 1
+    assert db.list_plans("conv-plan")[0]["status"] == "done"

@@ -12,11 +12,14 @@
 - FastAPI + uvicorn，单进程；稳定内核在 `app/kernel/`
 - 动作协议：`shell` / `write_file` / `read_file` / `self_restart` / `done`
 - 插件系统：`plugins/<name>/{plugin.json,plugin.py,README.md}`，新工具/HTTP op 热加载不重启
-- 规划与上下文预留 `planners` / `context` 注册表，Phase 2/3 插件化
+- 规划：`plugins/planning` 通过 `ctx.planners` 接入，计划状态机/验收/恢复在 `app/planning.py`
+- 分类：`plugins/classifier` 通过 `classify.prompt` hook 接入，规则兜底
+- 上下文预留 `context` 注册表，Phase 3 插件化
 - HTTP：`/api/plugins`、`/api/plugins/{name}/reload`、`/api/plugin/{name}/{op}`
 - 实时事件：`GET /api/events`（SSE），前端已从轮询切换为 EventSource
 - 提示词外置：`prompts/system.md`，每轮热加载
 - 会话状态：SQLite `state/agent.db`（sessions/messages/events/plans）；旧 `session.json` 自动迁移一次
+- 计划：`planning → executing → verifying → done/replan`，支持进程重启恢复、确定性验收、同会话新任务重置
 - 自更新：`self_restart` → 备份 → 语法校验 → `os.execv` 重启，失败自动回滚
 - 手动救援：`/manual` 页面，可执行命令、看崩溃日志、手动重启
 

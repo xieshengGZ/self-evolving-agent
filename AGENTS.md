@@ -13,7 +13,7 @@
 
 ## 现在在哪
 
-- 当前阶段：**Phase 0 + Phase 1 完成**（稳定内核 + 插件热插拔 + SSE + SQLite）
+- 当前阶段：**Phase 0 + 1 + 2 完成**（稳定内核 + 热插拔 + SSE/SQLite + 规划状态机）
 - 现状唯一真源：`docs/STATUS.md`
 - 路线图：`docs/ROADMAP.md`
 - 架构：`docs/ARCHITECTURE.md`
@@ -53,15 +53,19 @@ app/kernel/            # 稳定内核，不 import 任何插件
   sse.py               # /api/events 事件流
 app/storage.py         # SQLite：sessions/messages/events/plans
 app/session.py         # 内存热状态 + SQLite 持久化
+app/planning.py        # Plan/PlanStep、状态机、确定性验收、计划持久化
 state/agent.db         # 运行时数据库（不入库）
 plugins/
   tools_basic/         # shell / read / write / self_restart / 符号工具
+  planning/            # LLM 任务规划器（ctx.planners.default）
+  classifier/          # chat/task/continuation/control 分类（hook）
   hello/               # 热加载演示插件
 docs/                  # 项目记忆
 tests/                 # 可执行的记忆
 ```
 
 依赖方向只有一条：`main → kernel → plugins`。
+`app/planning.py` 是内核与 planning 插件共享的稳定领域层。
 **插件之间、插件与 main.py 之间禁止互相 import**，只能通过 `ctx` 交互。
 
 ## 铁律
@@ -72,6 +76,7 @@ tests/                 # 可执行的记忆
 4. 不提交密钥；`.env`、`state/`、`backups/` 不入库。
 5. 新增/修改插件必须带 `plugin.json` 与该插件的 `README.md`。
 6. 内核代码变更仍需重启；不要试图热补丁内核。
+7. 计划必须可验收；能确定性检查的，不要只写自然语言。
 
 ## 上手顺序
 

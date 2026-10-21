@@ -4,48 +4,50 @@
 
 ## 当前阶段
 
-Phase 0 / Phase 1 完成：稳定内核、插件热插拔、SSE 事件流、SQLite 持久化。
-下一阶段：Phase 2 任务规划插件。
+Phase 0 / 1 / 2 完成：稳定内核、插件热插拔、SSE + SQLite、规划状态机。
+下一阶段：Phase 3 上下文管理插件。
 
 ## 上次完成（2026-10-21）
 
-- 建立 `AGENTS.md` + `docs/` 项目记忆
-- 拆分 `app/kernel/`，`agent_loop` 从 `main.py` 抽离
-- 插件加载器：`plugin.json`、原子热替换、失败保留旧版
-- `tools_basic` 迁移为插件；`hello` 演示插件
-- 新增 `/api/plugins`、`/api/plugins/{name}/reload`、`/api/plugin/{name}/{op}`
-- 修复 `config.CMD_TIMEOUT` 拼写错误
-- 插件源码改为 `compile` + `exec` 加载，避免同秒改写命中旧 `.pyc`
-- 新增 pytest 基线测试与 `app.cli`
-- `.gitignore` 放行 `.env.example`，`.env.example` 补插件热加载开关
-- SQLite：`app/storage.py` + `state/agent.db`（sessions/messages/events/plans/meta）
-- SSE：`GET /api/events`，前端 EventSource 替代 1s 轮询；支持 `Last-Event-ID`
-- 旧 `state/session.json` 启动时自动迁移；`python -m app.migrate` 可手动执行
-- 修复 `memory.new_conv_id()` 同秒碰撞（加随机后缀）
-- `app.cli status` 直接读 SQLite，不触发迁移/会话状态写入
+- 建立 `AGENTS.md` + `docs/` 项目记忆；拆分 `app/kernel/`
+- 插件加载器：`plugin.json`、原子热替换、失败保留旧版；`tools_basic` / `hello`
+- SQLite `state/agent.db`（sessions/messages/events/plans/meta）+ `session.json` 一次性迁移
+- SSE `GET /api/events`，前端 EventSource 替代 1s 轮询；支持 `Last-Event-ID`
+- Phase 2：`app/planning.py`（Plan/PlanStep、状态机、恢复、确定性验收）
+- Phase 2：`plugins/planning`（`ctx.planners.default`，create/revise，status/reset）
+- Phase 2：`plugins/classifier`（hook `classify.prompt`，chat/task/continuation/control）
+- Phase 2：新任务清旧计划；`continuation` 保留计划；`done` 前强制验收
+- `plans` schema v2：`acceptance/current_step/revision`，旧库启动自动补列
+- `app/session.py` 补 `snapshot` 与 getter，`plan_text` 注入每轮上下文
 
 ## 已知问题
 
-- 规划器仍在 `kernel/loop.py` 直接调用，未插件化（Phase 2）
 - 上下文仍在 `session.build_messages` 硬编码，未插件化（Phase 3）
+- `acceptance` 为空时计划完成即通过；需要强保证时必须写验收项
+- `depends_on` 仅展示，尚未参与调度
+- `classifier` 依赖插件；插件异常时回退 `app/classifier.py` 规则
 - SSE token 走查询参数，可能进入访问日志（单用户环境可接受，ADR-009）
-- `classifier` 仍是规则匹配
-- `state/session.json` 迁移后原文件保留，确认稳定后可手动归档
+- `state/session.json` 迁移后保留，确认稳定后可手动归档
 
 ## 下一步（3）
 
-1. Phase 2：`planning` 插件（Plan 模型 + 状态机 + 恢复）
-2. Phase 2：确定性验证器 + `classifier` 插件化
-3. Phase 3：`context` 插件（分层预算 + artifact 卸载）
+1. Phase 3：`context` 插件（Section 模型 + token 预算 + 分层优先级）
+2. Phase 3：工具结果 artifact 卸载 + `/api/context` 预算展示
+3. Phase 3：压力触发压缩与可替换压缩后端
 
 ## 插件状态
 
 | 插件 | 版本 | 状态 | 能力 |
 |---|---|---|---|
 | `tools_basic` | 0.1.0 | active | shell / read_file / write_file / self_restart / 符号工具 |
+| `planning` | 0.1.0 | active | LLM 计划 create/revise；`status` / `reset` HTTP op |
+| `classifier` | 0.1.0 | active | `classify.prompt` hook；四模式分类 |
 | `hello` | 0.1.0 | experimental | 热加载演示：`hello_ping` 工具 + `ping` HTTP op |
 
 ## 最近验证
 
-- 2026-10-21：`pytest` 26 passed；`compileall` 通过；SQLite 迁移用真实 `session.json` 副本验证（36 messages / 76 events / 1 plan）；SSE backlog + 跨线程推送测试通过；`app.cli status` 不触发迁移。
-- 线上服务已于 15:33 由外部启动，当前 active；`/api/events` 与真实 `state/agent.db` 已验证，旧 `session.json` 已完成迁移。
+- 2026-10-21：`make check` **40 passed**；`compileall` 通过。
+- Phase 2 集成测试：计划创建/执行/验收、失败重规划、重启恢复、新任务清计划。
+- control 在 running 状态也可用；修复 `/api/stop` 调用不存在的 `actions.kill_current_process`。
+- 临时根目录 E2E：4 插件加载，`planning.status` 正常，`/api/chat` 的“状态”经 classifier 走 control，`/api/state` 含 `plan`。
+- 线上服务已于 17:32 重启；4 插件加载，plans 表已补 `acceptance/current_step/revision`，schema_version=2；SSE 正常。

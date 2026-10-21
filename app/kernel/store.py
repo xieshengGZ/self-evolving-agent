@@ -90,8 +90,26 @@ class Store:
         goal: str,
         steps: List[Dict[str, Any]],
         status: str = "active",
+        *,
+        acceptance: Optional[List[Dict[str, Any]]] = None,
+        current_step: int = 0,
+        revision: int = 0,
     ) -> int:
-        return self.storage.save_plan(conv_id, goal, steps, status)
+        return self.storage.save_plan(
+            conv_id,
+            goal,
+            steps,
+            status,
+            acceptance=acceptance,
+            current_step=current_step,
+            revision=revision,
+        )
+
+    def update_plan(self, plan_id: int, **fields: Any) -> None:
+        self.storage.update_plan(plan_id, **fields)
+
+    def get_plan(self, plan_id: int) -> Optional[Dict[str, Any]]:
+        return self.storage.get_plan(plan_id)
 
     def get_plans(self, conv_id: str = "", limit: int = 20) -> List[Dict[str, Any]]:
         return self.storage.list_plans(conv_id or session.get_conv_id(), limit)

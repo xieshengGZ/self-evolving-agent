@@ -24,15 +24,15 @@
 - [x] 旧的 `state/session.json` 一次性迁移脚本（`app.migrate`）
 - [x] 插件自动监听（`AGENT_PLUGIN_AUTORELOAD` 已留开关）
 
-## Phase 2 — 任务规划插件
+## Phase 2 — 任务规划插件（已完成）
 
-- [ ] `Plan` / `PlanStep` 模型（goal / acceptance / deps / status / evidence）
-- [ ] `planning` 状态机：planning → executing → verifying → done/replan
-- [ ] 持久化与重启恢复
-- [ ] 重规划触发器（连续失败 / 验收失败 / 用户改目标）
-- [ ] 确定性验证器（exit code、文件存在、测试通过）
-- [ ] `classifier` 插件化（chat / task / continuation / control）
-- [ ] 同会话新任务强制 `reset_plan`
+- [x] `Plan` / `PlanStep` 模型（goal / acceptance / deps / status / evidence）
+- [x] `planning` 状态机：planning → executing → verifying → done/replan
+- [x] 持久化与重启恢复
+- [x] 重规划触发器（连续失败 / 验收失败 / 用户改目标）
+- [x] 确定性验证器（exit code、文件存在、测试通过）
+- [x] `classifier` 插件化（chat / task / continuation / control）
+- [x] 同会话新任务强制 `reset_plan`
 
 ## Phase 3 — 上下文管理插件
 

@@ -209,6 +209,22 @@ class Session:
             self.task_state = dict(state or {})
         self._save_session()
 
+    def get_conv_id(self) -> str:
+        with self.lock:
+            return self.conv_id
+
+    def get_task(self) -> str:
+        with self.lock:
+            return self.task
+
+    def get_task_state(self) -> Dict[str, Any]:
+        with self.lock:
+            return dict(self.task_state)
+
+    def get_status(self) -> str:
+        with self.lock:
+            return self.status
+
     def new_conversation(self, task: str) -> str:
         """开新对话；旧消息已落在 SQLite，这里只切换当前会话。"""
         with self.lock:
@@ -427,6 +443,10 @@ def clear_events() -> None:
 def get_events(since: int = 0) -> List[Dict[str, Any]]:
     with _default.lock:
         return list(_default.events[since:]) if since >= 0 else list(_default.events)
+
+
+def snapshot(since: int = 0) -> Dict[str, Any]:
+    return _default.snapshot(since)
 
 
 def event_count() -> int:

@@ -1,0 +1,11 @@
+{
+  "name": "planning",
+  "version": "0.1.0",
+  "api_version": 1,
+  "entry": "plugin.py",
+  "status": "active",
+  "description": "LLM task planner with acceptance checks and replan support",
+  "config": {
+    "max_steps": 8
+  }
+}

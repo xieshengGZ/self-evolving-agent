@@ -15,7 +15,7 @@ from typing import Any, Dict, Iterator, List, Optional
 
 from app import config
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -58,6 +58,9 @@ CREATE TABLE IF NOT EXISTS plans (
     goal TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active',
     steps TEXT NOT NULL DEFAULT '[]',
+    acceptance TEXT NOT NULL DEFAULT '[]',
+    current_step INTEGER NOT NULL DEFAULT 0,
+    revision INTEGER NOT NULL DEFAULT 0,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
@@ -86,11 +89,24 @@ class Storage:
     def init(self) -> None:
         with self._db() as conn:
             conn.executescript(_SCHEMA)
+            self._ensure_plan_columns(conn)
             conn.execute(
                 "INSERT INTO meta(key, value) VALUES('schema_version', ?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (SCHEMA_VERSION,),
             )
+
+    @staticmethod
+    def _ensure_plan_columns(conn: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(plans)")}
+        additions = {
+            "acceptance": "TEXT NOT NULL DEFAULT '[]'",
+            "current_step": "INTEGER NOT NULL DEFAULT 0",
+            "revision": "INTEGER NOT NULL DEFAULT 0",
+        }
+        for name, ddl in additions.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE plans ADD COLUMN {name} {ddl}")
 
     # ---------------- sessions ----------------
     def create_session(self, conv_id: str, title: str = "") -> None:
@@ -245,39 +261,101 @@ class Storage:
         goal: str,
         steps: List[Dict[str, Any]],
         status: str = "active",
+        *,
+        acceptance: Optional[List[Dict[str, Any]]] = None,
+        current_step: int = 0,
+        revision: int = 0,
     ) -> int:
         now = time.time()
         with self._db() as conn:
             cursor = conn.execute(
-                "INSERT INTO plans(conv_id, goal, status, steps, created_at, updated_at) "
-                "VALUES(?, ?, ?, ?, ?, ?)",
+                "INSERT INTO plans"
+                "(conv_id, goal, status, steps, acceptance, current_step, revision, "
+                "created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     conv_id,
                     goal or "",
                     status or "active",
                     json.dumps(list(steps or []), ensure_ascii=False),
+                    json.dumps(list(acceptance or []), ensure_ascii=False),
+                    max(0, int(current_step or 0)),
+                    max(0, int(revision or 0)),
                     now,
                     now,
                 ),
             )
             return int(cursor.lastrowid or 0)
 
+    def update_plan(
+        self,
+        plan_id: int,
+        *,
+        goal: Optional[str] = None,
+        status: Optional[str] = None,
+        steps: Optional[List[Dict[str, Any]]] = None,
+        acceptance: Optional[List[Dict[str, Any]]] = None,
+        current_step: Optional[int] = None,
+        revision: Optional[int] = None,
+    ) -> None:
+        fields: List[str] = []
+        values: List[Any] = []
+        if goal is not None:
+            fields.append("goal=?")
+            values.append(str(goal))
+        if status is not None:
+            fields.append("status=?")
+            values.append(str(status))
+        if steps is not None:
+            fields.append("steps=?")
+            values.append(json.dumps(list(steps), ensure_ascii=False))
+        if acceptance is not None:
+            fields.append("acceptance=?")
+            values.append(json.dumps(list(acceptance), ensure_ascii=False))
+        if current_step is not None:
+            fields.append("current_step=?")
+            values.append(max(0, int(current_step)))
+        if revision is not None:
+            fields.append("revision=?")
+            values.append(max(0, int(revision)))
+        if not fields:
+            return
+        fields.append("updated_at=?")
+        values.append(time.time())
+        values.append(int(plan_id))
+        with self._db() as conn:
+            conn.execute("UPDATE plans SET " + ", ".join(fields) + " WHERE id=?", values)
+
+    @staticmethod
+    def _plan_from_row(row: sqlite3.Row) -> Dict[str, Any]:
+        item = dict(row)
+        try:
+            item["steps"] = json.loads(item.get("steps") or "[]")
+        except Exception:  # noqa: BLE001
+            item["steps"] = []
+        try:
+            item["acceptance"] = json.loads(item.get("acceptance") or "[]")
+        except Exception:  # noqa: BLE001
+            item["acceptance"] = []
+        return item
+
+    def get_plan(self, plan_id: int) -> Optional[Dict[str, Any]]:
+        with self._db() as conn:
+            row = conn.execute(
+                "SELECT id, conv_id, goal, status, steps, acceptance, current_step, "
+                "revision, created_at, updated_at FROM plans WHERE id=?",
+                (int(plan_id),),
+            ).fetchone()
+        return self._plan_from_row(row) if row is not None else None
+
     def list_plans(self, conv_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         with self._db() as conn:
             rows = conn.execute(
-                "SELECT id, conv_id, goal, status, steps, created_at, updated_at "
+                "SELECT id, conv_id, goal, status, steps, acceptance, current_step, "
+                "revision, created_at, updated_at "
                 "FROM plans WHERE conv_id=? ORDER BY id DESC LIMIT ?",
                 (conv_id, max(1, int(limit))),
             ).fetchall()
-        plans: List[Dict[str, Any]] = []
-        for row in rows:
-            item = dict(row)
-            try:
-                item["steps"] = json.loads(item.get("steps") or "[]")
-            except Exception:  # noqa: BLE001
-                item["steps"] = []
-            plans.append(item)
-        return plans
+        return [self._plan_from_row(row) for row in rows]
 
     # ---------------- migration ----------------
     def migrate_json(self, json_path: Optional[str | Path] = None) -> Dict[str, Any]:
@@ -373,16 +451,23 @@ class Storage:
 
         plan = task_state.get("plan") or []
         plan_text = task_state.get("plan_text") or ""
-        if plan:
+        goal = str(data.get("task") or "")
+        if isinstance(plan, dict) and plan.get("steps"):
             self.save_plan(
                 conv_id,
-                goal=str(data.get("task") or ""),
-                steps=plan if isinstance(plan, list) else [],
-                status="active",
+                goal=str(plan.get("goal") or goal),
+                steps=plan.get("steps") or [],
+                status=str(plan.get("status") or "active"),
+                acceptance=plan.get("acceptance") or [],
+                current_step=int(plan.get("current") or 0),
+                revision=int(plan.get("revision") or 0),
             )
             result["plans"] += 1
+        elif isinstance(plan, list) and plan:
+            self.save_plan(conv_id, goal=goal, steps=plan, status="active")
+            result["plans"] += 1
         elif plan_text:
-            self.save_plan(conv_id, goal=str(data.get("task") or ""), steps=[{"text": plan_text}], status="active")
+            self.save_plan(conv_id, goal=goal, steps=[{"text": plan_text}], status="active")
             result["plans"] += 1
 
         self._set_meta("json_migrated", str(path))

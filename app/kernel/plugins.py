@@ -274,6 +274,7 @@ class PluginManager:
                 "description": loaded.manifest.description,
                 "tools": loaded.layer.tools.names(),
                 "http": loaded.layer.http.ops(),
+                "planners": loaded.layer.planners.names(),
                 "hooks": loaded.layer.hooks.describe(),
                 "loaded_at": loaded.loaded_at,
             }
@@ -304,6 +305,25 @@ class PluginManager:
             return None
         return loaded.layer.http.get(op)
 
+    def get_planner(self, name: str = "default") -> Any:
+        with self._lock:
+            plugins = list(self._plugins.values())
+        for loaded in reversed(plugins):
+            planner = loaded.layer.planners.get(name)
+            if planner is not None:
+                return planner
+        return None
+
+    def planner_names(self) -> List[str]:
+        names: List[str] = []
+        with self._lock:
+            plugins = list(self._plugins.values())
+        for loaded in plugins:
+            for name in loaded.layer.planners.names():
+                if name not in names:
+                    names.append(name)
+        return names
+
     def emit_hook(self, event: str, **kwargs: Any) -> List[Any]:
         results: List[Any] = []
         with self._lock:
@@ -320,6 +340,7 @@ class PluginManager:
         return {
             "plugins": self.list_plugins(),
             "tools": self.tool_names(),
+            "planners": self.planner_names(),
             "errors": self.errors(),
         }
 

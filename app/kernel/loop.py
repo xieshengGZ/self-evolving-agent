@@ -1,15 +1,15 @@
 """Agent loop and model protocol helpers.
 
 Orchestration lives here so `app/main.py` can stay a thin bootstrap. Planning
-and context assembly are still inline; Phase 2/3 will move them behind the
-planner/context registries.
+policy comes from the `planning` plugin; `app.planning` owns the typed plan,
+state transitions, verification, and persistence.
 """
 import json
 import re
 import time
 from typing import Any, Dict, List, Optional
 
-from app import config, deepseek, planner, session
+from app import config, deepseek, planning, session
 from app.kernel import get_runtime
 
 FALLBACK_PROMPT = (
@@ -68,32 +68,67 @@ def _append_event(kind: str, message: str) -> None:
     session.add_event(kind, message)
 
 
+def _start_plan(runtime: Any) -> Optional[planning.Plan]:
+    if not config.AGENT_ENABLE_PLANNER:
+        return None
+
+    plan = planning.load_plan()
+    task = (session.get_task() or "").strip()
+    if plan is not None and plan.status in ("done", "failed", "cancelled"):
+        plan = None
+
+    if plan is not None:
+        if task and plan.goal and plan.goal.strip() != task:
+            planning.clear_plan("任务目标变化")
+            _append_event("info", "任务目标变化，已重置旧计划")
+            plan = None
+        else:
+            _append_event("info", f"恢复计划 #{plan.id} ({plan.status})")
+            planning.begin_execution(plan)
+            return plan
+
+    if not task:
+        return None
+
+    try:
+        created = planning.create_plan(task, runtime=runtime)
+        _append_event("plan", f"已规划 {len(created.steps)} 步")
+        try:
+            runtime.emit_hook("plan.created", plan=created.to_dict())
+        except Exception:  # noqa: BLE001
+            pass
+        return created
+    except Exception as exc:  # noqa: BLE001
+        _append_event("warn", f"规划失败降级：{type(exc).__name__}: {exc}")
+        return None
+
+
+def _replan(plan: planning.Plan, feedback: str, runtime: Any) -> Optional[planning.Plan]:
+    if not planning.can_replan(plan):
+        _append_event("warn", f"重规划次数已达上限 {config.AGENT_MAX_REPLANS}")
+        return None
+    try:
+        revised = planning.revise_plan(plan, feedback, runtime=runtime)
+        _append_event("plan", f"已重规划 revision {revised.revision}：{feedback[:300]}")
+        try:
+            runtime.emit_hook(
+                "plan.revised",
+                plan=revised.to_dict(),
+                feedback=(feedback or "")[:1000],
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return revised
+    except Exception as exc:  # noqa: BLE001
+        _append_event("error", f"重规划失败：{type(exc).__name__}: {exc}")
+        return None
+
+
 def agent_loop() -> None:
     """自愈循环：每步 try/except，失败转 error 回传模型，有硬性上限。"""
     runtime = get_runtime()
     steps = 0
-
-    if config.AGENT_ENABLE_PLANNER:
-        try:
-            state = session.get_task_state() or {}
-        except Exception:  # noqa: BLE001
-            state = {}
-        if not state.get("plan"):
-            task = session.get_task()
-            if task and task.strip():
-                try:
-                    plan_result = planner.plan(task)
-                    if "error" in plan_result:
-                        _append_event("warn", "规划失败降级：" + plan_result["error"])
-                    else:
-                        state["plan"] = plan_result["steps"]
-                        state["plan_text"] = planner.format_plan_text(plan_result["steps"])
-                        state["current"] = 0
-                        state["task"] = task
-                        session.set_task_state(state)
-                        _append_event("plan", "已规划 " + str(len(plan_result["steps"])) + " 步")
-                except Exception as exc:  # noqa: BLE001
-                    _append_event("warn", "规划异常降级：" + str(exc))
+    plan = _start_plan(runtime)
 
     fails = 0
     started = time.time()
@@ -120,10 +155,29 @@ def agent_loop() -> None:
                 _append_event("error", f"超过最大运行时长 {config.AGENT_MAX_RUNTIME}s")
                 break
             if fails >= config.AGENT_MAX_CONSECUTIVE_FAILURES:
-                _append_event("error", f"连续失败 {fails} 次，停止自愈")
-                break
+                revised = None
+                if plan is not None:
+                    revised = _replan(
+                        plan,
+                        f"连续失败 {fails} 次，请修正方案。",
+                        runtime,
+                    )
+                if revised is None:
+                    _append_event("error", f"连续失败 {fails} 次，停止自愈")
+                    break
+                plan = revised
+                fails = 0
+                last_action_str = ""
+                repeat_count = 0
+                continue
             steps += 1
             _append_event("info", f"--- step {steps}/{config.AGENT_MAX_STEPS} ---")
+
+            if plan is not None:
+                try:
+                    planning.before_step(plan)
+                except Exception as exc:  # noqa: BLE001
+                    _append_event("warn", f"更新计划步骤失败: {exc}")
 
             try:
                 system_prompt = load_system_prompt()
@@ -173,16 +227,54 @@ def agent_loop() -> None:
                 last_action_str = action_str
                 repeat_count = 0
             if repeat_count >= 3:
-                _append_event("error", "连续 3 次相同动作，强制终止")
-                break
+                revised = None
+                if plan is not None:
+                    revised = _replan(
+                        plan,
+                        "连续 3 次相同动作，计划可能已失效，请换一种做法。",
+                        runtime,
+                    )
+                if revised is None:
+                    _append_event("error", "连续 3 次相同动作，强制终止")
+                    break
+                plan = revised
+                last_action_str = ""
+                repeat_count = 0
+                continue
 
             name = action.get("action")
             _append_event("action", json.dumps(action, ensure_ascii=False)[:2000])
 
             if name == "done":
-                _append_event("done", str(action.get("message", "")))
-                session.persist()
-                break
+                if plan is None:
+                    _append_event("done", str(action.get("message", "")))
+                    session.persist()
+                    break
+                try:
+                    plan.mark_remaining_skipped("模型提前结束")
+                    planning.start_verification(plan)
+                    verification = planning.verify_plan(plan)
+                except Exception as exc:  # noqa: BLE001
+                    _append_event("error", f"验收异常: {type(exc).__name__}: {exc}")
+                    planning.fail(plan, f"验收异常: {exc}")
+                    break
+                if verification.get("ok"):
+                    planning.complete(plan)
+                    _append_event("done", str(action.get("message", "")))
+                    session.persist()
+                    break
+                feedback = planning.verification_feedback(verification)
+                _append_event("warn", "验收失败：" + feedback)
+                revised = _replan(plan, "验收失败：\n" + feedback, runtime)
+                if revised is None:
+                    planning.fail(plan, "验收失败且无法重规划")
+                    _append_event("error", "验收失败且无法重规划")
+                    break
+                plan = revised
+                fails = 0
+                last_action_str = ""
+                repeat_count = 0
+                continue
 
             if name == "self_restart":
                 try:
@@ -197,7 +289,6 @@ def agent_loop() -> None:
 
             try:
                 result = runtime.execute_tool(action)
-                fails = 0
             except Exception as exc:  # noqa: BLE001
                 fails += 1
                 result = {"error": f"{type(exc).__name__}: {exc}"}
@@ -206,6 +297,17 @@ def agent_loop() -> None:
                     f"execute_tool 失败({fails}/{config.AGENT_MAX_CONSECUTIVE_FAILURES}): "
                     f"{result['error']}",
                 )
+            else:
+                if isinstance(result, dict) and result.get("error"):
+                    fails += 1
+                else:
+                    fails = 0
+
+            if plan is not None:
+                try:
+                    planning.record_result(plan, action, result)
+                except Exception as exc:  # noqa: BLE001
+                    _append_event("warn", f"记录计划步骤失败: {exc}")
 
             try:
                 session.append_history("user", json.dumps(result, ensure_ascii=False))
@@ -223,7 +325,7 @@ def agent_loop() -> None:
                 break
 
         if steps >= config.AGENT_MAX_STEPS:
-            _append_event("info", f"达到最大步数 {config.AGENT_MAX_STEPS}")
+            _append_event("info", f"达到最大步数 {config.AGENT_MAX_STEPS}，计划保留，可继续")
     except Exception as exc:  # noqa: BLE001
         import traceback
 
@@ -241,6 +343,11 @@ def agent_loop() -> None:
             )
         except Exception:  # noqa: BLE001
             pass
+        if plan is not None:
+            try:
+                planning.fail(plan, f"agent_loop 致命异常: {exc}")
+            except Exception:  # noqa: BLE001
+                pass
     finally:
         try:
             session.set_status("idle")

@@ -64,3 +64,17 @@
 - **背景**：前端每秒轮询 `/api/state`，延迟高、请求多；`EventSource` 不能设置 `Authorization` 头。
 - **决定**：新增 `GET /api/events`，支持 `Authorization` 或 `?token=`；服务端通过每连接 `asyncio.Queue` 推送 `log`/`state` 事件，支持 `Last-Event-ID` 重连与 15s 心跳。HTTP 路由保持不变，前端用 EventSource 替代 `setInterval`。
 - **后果**：token 可能出现在访问日志中，仅适用于当前单用户、可信托管环境；未来可换短时票据或同源 Cookie。SSE 只读，写操作仍走 POST。
+
+## ADR-010 — 计划状态机在内核，LLM 规划在插件
+
+- **日期**：2026-10-21
+- **背景**：Phase 1 的 `kernel/loop.py` 直接拼规划提示词、解析计划、按动作推进；计划是未类型化的 list，失败后只能整轮重来，且重启后无法可靠恢复。
+- **决定**：`app/planning.py` 提供 `Plan`/`PlanStep`、合法状态迁移、重规划计数、确定性验收和 SQLite/session 持久化；`plugins/planning` 只负责 LLM 提示词与 `create/revise`。内核通过 `ctx.planners.default` 获取规划器，插件缺失/失败时降级到旧 `app/planner.py`。
+- **后果**：规划策略可热替换，状态机与验收保持内核一致；`plans` 表升级到 schema v2，新增 `acceptance/current_step/revision`，启动时自动补列。计划验收命令与 agent 工具同权限，仍受危险命令拦截和超时约束。
+
+## ADR-011 — 分类器复用 hook bus，不新增注册表
+
+- **日期**：2026-10-21
+- **背景**：`classifier` 原为 `app/classifier.py` 规则匹配；为了可替换分类策略，需要插件入口，但为一个单函数能力新增注册表会扩大内核 API。
+- **决定**：内核在 `classifier.classify()` 中发布 `classify.prompt` 钩子，按插件加载顺序取第一个合法返回值；插件缺失、抛异常或返回非法值时回退规则匹配。模式固定为 `chat/task/continuation/control`。
+- **后果**：`classifier` 可热替换且无需提升 `api_version`；钩子模型保持“旁路增强”，主流程不会因分类插件故障中断。

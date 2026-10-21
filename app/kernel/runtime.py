@@ -41,6 +41,12 @@ class KernelRuntime:
     def stop(self) -> None:
         self.plugins.stop_watcher()
 
+    def get_planner(self, name: str = "default") -> Any:
+        return self.plugins.get_planner(name)
+
+    def emit_hook(self, event: str, **kwargs: Any) -> list[Any]:
+        return self.plugins.emit_hook(event, **kwargs)
+
     def execute_tool(self, action: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(action, dict):
             return {"error": "动作必须是 JSON 对象"}

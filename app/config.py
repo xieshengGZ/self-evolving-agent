@@ -51,6 +51,8 @@ def redact(text: str) -> str:
 
 # ---- self-heal limits (added) ----
 AGENT_MAX_CONSECUTIVE_FAILURES: int = int(_env("AGENT_MAX_CONSECUTIVE_FAILURES", "3"))
+AGENT_MAX_REPLANS: int = int(_env("AGENT_MAX_REPLANS", "2"))
+AGENT_PLAN_MAX_STEPS: int = int(_env("AGENT_PLAN_MAX_STEPS", "8"))
 AGENT_MAX_RUNTIME: int = int(_env("AGENT_MAX_RUNTIME", "600"))
 AGENT_MAX_RESTARTS_PER_WINDOW: int = int(_env("AGENT_MAX_RESTARTS_PER_WINDOW", "5"))
 AGENT_RESTART_WINDOW_SEC: int = int(_env("AGENT_RESTART_WINDOW_SEC", "120"))

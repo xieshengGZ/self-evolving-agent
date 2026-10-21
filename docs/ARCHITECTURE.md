@@ -52,7 +52,8 @@
 | `app/kernel/runtime.py` | `KernelRuntime` 单例：`Store` + `EventBus` + `PluginManager`；`execute_tool` / `snapshot` |
 | `app/kernel/store.py` | 插件可见的存储 API；实时状态走 `session`，查询/计划走 `Storage` |
 | `app/kernel/bus.py` | 进程内事件总线，可桥接 session 事件 |
-| `app/kernel/loop.py` | agent 主循环、system prompt 加载、动作 JSON 解析 |
+| `app/kernel/loop.py` | agent 主循环、system prompt 加载、动作 JSON 解析、计划推进 |
+| `app/planning.py` | `Plan`/`PlanStep`、状态迁移、确定性验收、计划持久化/恢复 |
 | `app/kernel/http.py` | `/api/plugins`、`/api/plugins/{name}/reload`、`/api/plugin/{name}/{op}` |
 | `app/kernel/sse.py` | `/api/events` SSE：backlog、实时事件、状态快照、心跳 |
 | `app/kernel/context.py` | `PluginContext`：插件能看到的唯一 API |
@@ -105,18 +106,40 @@ plugins/<name>/
 - **按 step 快照**：agent 每一步开始时取一次分辨率，执行中途换插件不影响当前步。
 - **HTTP 路由不动态增删**：所有插件 op 走固定入口 `/api/plugin/{name}/{op}`。
 
+## 规划状态机
+
+```
+create_plan ──> planning ──> executing ──> verifying ──> done
+                    │             │             │
+                    │             ├── 连续失败 ──┤
+                    │             └── 重复动作 ──┘
+                    │                           │
+                    └──────────── replan <───────┘
+                                      │
+                                      └──> executing
+```
+
+- 内核只接受合法迁移（`_ALLOWED_TRANSITIONS`）；终态为 `done/failed/cancelled`。
+- `replan` 触发：连续失败达到上限、连续 3 次相同动作、`done` 前验收失败。
+- 重规划次数由 `AGENT_MAX_REPLANS` 限制；超过后保留旧计划并终止或标记失败。
+- 进程重启后，`load_plan()` 先读 `task_state.plan`，缺失时从 `plans` 表恢复最近未终态计划。
+- `done` 前强制 `verify_plan()`；验收项为空时视为通过，避免无意义阻塞。
+- 新任务/清空会话调用 `clear_plan()`，旧计划在 SQLite 中标记 `cancelled`。
+
 ## 数据流（当前）
 
 ```
 POST /api/chat
-  → classifier（规则，Phase 2 可插件化）
+  → classifier 插件（hook: classify.prompt，规则兜底）
+  → 模式路由：chat / task / continuation / control
   → 后台线程 agent_loop
-      → planner（Phase 2 迁插件）
-      → session.build_messages（Phase 3 迁插件）
+      → planning 插件（ctx.planners.default）→ Plan（状态机在 app/planning.py）
+      → session.build_messages（含 plan_text；Phase 3 迁 context 插件）
       → deepseek.chat
       → kernel.loop.parse_action
       → runtime.execute_tool → tools_basic 插件
-      → session 记录 → SQLite（messages/events）+ 通知 SSE 订阅者
+      → planning.record_result / 失败重规划 / done 前验收
+      → session 记录 → SQLite（messages/events/plans）+ 通知 SSE 订阅者
 ```
 
 ## 事件流（SSE）
@@ -139,7 +162,7 @@ POST /api/chat
 | `sessions` | `conv_id` / status / task / task_state / 时间戳 |
 | `messages` | 每个会话的完整消息（内存只保留 `AGENT_WINDOW_SIZE` 条） |
 | `events` | 每个会话的事件（内存只保留最近 500 条） |
-| `plans` | 计划快照，Phase 2 使用 |
+| `plans` | 计划快照：goal/status/steps/acceptance/current_step/revision |
 | `meta` | schema 版本与一次性迁移标记 |
 
 `state/session.json` 不再写入；启动时自动迁移一次（`meta.json_migrated` 防重复），
