@@ -1,7 +1,9 @@
 # agent-services
 
-一个能操作 Ubuntu 系统、可自我修改并重启的单会话 AI Agent 服务。
+一个能完全操作 Ubuntu 系统、可自我升级完善的 AI Agent 服务。
 用户通过 Web 页面和它对话，它调用 DeepSeek 规划动作，由自身执行并回传结果，循环直到任务完成。
+<img width="1920" height="924" alt="08ac9414fc739a4e37dbad533874c838" src="https://github.com/user-attachments/assets/1ed7b4c7-77ca-4fe4-a5ac-1f712c1a3d44" />
+<img width="1920" height="919" alt="bba496ec1e0342b76837383c53d2d86c" src="https://github.com/user-attachments/assets/497212f7-b230-4adb-86fd-70179d995c7b" />
 
 ## 架构
 
