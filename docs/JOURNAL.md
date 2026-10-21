@@ -61,4 +61,4 @@
 **下一步**
 
 - Phase 2：`planning` 插件与状态机。
-- 部署：确认线上停服窗口后启动 `agent-services`，检查 `state/agent.db` 与 `/api/events`。
+- 部署：线上 `agent-services` 于 15:33 由外部启动；已验证 `/api/events`、`state/agent.db` 和旧数据迁移，无需再安排停服窗口。

@@ -48,4 +48,4 @@ Phase 0 / Phase 1 完成：稳定内核、插件热插拔、SSE 事件流、SQLi
 ## 最近验证
 
 - 2026-10-21：`pytest` 26 passed；`compileall` 通过；SQLite 迁移用真实 `session.json` 副本验证（36 messages / 76 events / 1 plan）；SSE backlog + 跨线程推送测试通过；`app.cli status` 不触发迁移。
-- 注意：systemd 服务在 14:39 被外部 SIGTERM 停止，当前 inactive；新代码尚未部署到线上进程。
+- 线上服务已于 15:33 由外部启动，当前 active；`/api/events` 与真实 `state/agent.db` 已验证，旧 `session.json` 已完成迁移。
