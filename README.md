@@ -5,14 +5,29 @@
 <img width="1920" height="924" alt="08ac9414fc739a4e37dbad533874c838" src="https://github.com/user-attachments/assets/1ed7b4c7-77ca-4fe4-a5ac-1f712c1a3d44" />
 <img width="1920" height="919" alt="bba496ec1e0342b76837383c53d2d86c" src="https://github.com/user-attachments/assets/497212f7-b230-4adb-86fd-70179d995c7b" />
 
+> 新会话先读 [`AGENTS.md`](AGENTS.md)，再看 [`docs/STATUS.md`](docs/STATUS.md)；不要依赖聊天记录。
+
 ## 架构
 
-- FastAPI + uvicorn，单进程
+- FastAPI + uvicorn，单进程；稳定内核在 `app/kernel/`
 - 动作协议：`shell` / `write_file` / `read_file` / `self_restart` / `done`
+- 插件系统：`plugins/<name>/{plugin.json,plugin.py,README.md}`，新工具/HTTP op 热加载不重启
+- 规划与上下文预留 `planners` / `context` 注册表，Phase 2/3 插件化
+- HTTP：`/api/plugins`、`/api/plugins/{name}/reload`、`/api/plugin/{name}/{op}`
 - 提示词外置：`prompts/system.md`，每轮热加载
-- 会话状态：`state/session.json`
+- 会话状态：`state/session.json`（后续迁 SQLite，`app/kernel/store.py` 是 seam）
 - 自更新：`self_restart` → 备份 → 语法校验 → `os.execv` 重启，失败自动回滚
 - 手动救援：`/manual` 页面，可执行命令、看崩溃日志、手动重启
+
+## 开发
+
+```bash
+.venv/bin/pip install -r requirements-dev.txt
+make check                    # compileall + pytest
+.venv/bin/python -m app.cli status
+.venv/bin/python -m app.cli map
+.venv/bin/python -m app.cli reload hello
+```
 
 ## 快速开始
 

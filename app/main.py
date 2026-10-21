@@ -1,19 +1,20 @@
-import json
 import os
-import re
 import threading
-import time
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from app import actions, classifier, config, deepseek, selfupdate, session
+from app.kernel import get_runtime
+from app.kernel.http import register_plugin_routes
+from app.kernel.loop import agent_loop, load_system_prompt
 
 app = FastAPI(title="agent-services")
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+_runtime = get_runtime()
 
 
 # ---------------------------------------------------------------------------
@@ -33,272 +34,6 @@ def require_token(authorization: Optional[str] = Header(default=None)) -> None:
     if not token or token != config.AGENT_WEB_TOKEN:
         raise HTTPException(status_code=401, detail="unauthorized")
 
-
-# ---------------------------------------------------------------------------
-# 提示词加载（热加载）
-# ---------------------------------------------------------------------------
-FALLBACK_PROMPT = (
-    "你是一个可以操作 Linux 系统的 AI Agent。每次只返回一个 JSON 动作，"
-    "不要输出多余文字。可用动作：shell、write_file、read_file、self_restart、done。"
-    "完成后返回 {\"action\":\"done\",\"message\":\"...\"}。"
-    "不得输出任何密钥或令牌。小步执行并验证结果。"
-)
-
-
-def load_system_prompt() -> str:
-    path = os.path.join(config.AGENT_ROOT, "prompts", "system.md")
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-        if content:
-            return content
-    except FileNotFoundError:
-        pass
-    except Exception:
-        pass
-    return FALLBACK_PROMPT
-
-
-# ---------------------------------------------------------------------------
-# JSON 动作解析
-# ---------------------------------------------------------------------------
-def parse_action(text: Any) -> Optional[Dict[str, Any]]:
-    """兼容 str 和 dict：DeepSeek 客户端若返回已解析的 dict，直接使用。"""
-    if isinstance(text, dict):
-        return text
-    if not isinstance(text, str):
-        return None
-    try:
-        text = text.strip()
-    except Exception:
-        return None
-    if not text:
-        return None
-    # 剥离 markdown 围栏
-    if text.startswith("```"):
-        first_nl = text.find("\n")
-        if first_nl != -1:
-            text = text[first_nl + 1:]
-            if text.rstrip().endswith("```"):
-                text = text.rstrip()[:-3]
-    # 去掉尾部杂标签（</parameter> 等）
-    text = re.sub(r"\s*</(?:parameter|response|output|content|answer)>\s*$", "", text,
-                  flags=re.I)
-    text = text.strip()
-    if not text:
-        return None
-    try:
-        obj = json.loads(text)
-    except Exception:
-        return None
-    if not isinstance(obj, dict):
-        return None
-    return obj
-
-def execute_action(action: Dict[str, Any]) -> Dict[str, Any]:
-    name = action.get("action")
-    try:
-        if name == "shell":
-            return actions.do_shell(
-                command=str(action.get("command", "")),
-                timeout=int(action.get("timeout", config.AGENT_CMD_TIMEOUT)),
-            )
-        if name == "write_file":
-            return actions.do_write_file(
-                path=str(action.get("path", "")),
-                content=str(action.get("content", "")),
-            )
-        if name == "read_file":
-            return actions.do_read_file(
-                path=str(action.get("path", "")),
-                max_bytes=int(action.get("max_bytes", 20000)),
-            )
-        if name == "self_restart":
-            return actions.do_self_restart(reason=str(action.get("reason", "")))
-        if name == "read_symbol":
-            return actions.do_read_symbol(symbol=str(action.get("symbol", "")))
-        if name == "read_file_summary":
-            return actions.do_read_file_summary(path=str(action.get("path", "")))
-        if name == "rebuild_index":
-            return actions.do_rebuild_index()
-        if name == "done":
-            return {"result_of": "done", "message": str(action.get("message", ""))}
-        return {"error": f"unknown action: {name}"}
-    except Exception as e:  # noqa: BLE001
-        return {"error": f"{type(e).__name__}: {e}"}
-
-
-# ---------------------------------------------------------------------------
-# Agent loop
-# ---------------------------------------------------------------------------
-def _append_event(kind: str, message: str) -> None:
-    session.add_event(kind, message)
-
-
-def agent_loop() -> None:
-    """自愈循环：每步 try/except，失败转 error 回传模型，有硬性上限。"""
-    import time as _t
-    steps = 0
-
-    if config.AGENT_ENABLE_PLANNER:
-        try:
-            _st = session.get_task_state() or {}
-        except Exception:
-            _st = {}
-        if not _st.get("plan"):
-            _tk = session.get_task()
-            if _tk and _tk.strip():
-                try:
-                    from app import planner as _planner
-                    _pl = _planner.plan(_tk)
-                    if "error" in _pl:
-                        _append_event("warn", "规划失败降级：" + _pl["error"])
-                    else:
-                        _st["plan"] = _pl["steps"]
-                        _st["plan_text"] = _planner.format_plan_text(_pl["steps"])
-                        _st["current"] = 0
-                        _st["task"] = _tk
-                        session.set_task_state(_st)
-                        _append_event("plan", "已规划 " + str(len(_pl["steps"])) + " 步")
-                except Exception as e:
-                    _append_event("warn", "规划异常降级：" + str(e))
-    fails = 0
-    started = _t.time()
-    last_action_str = ""
-    repeat_count = 0
-
-    def _fail(msg: str) -> None:
-        try:
-            session.append_history("user", json.dumps({"error": msg}, ensure_ascii=False))
-        except Exception:
-            pass
-        _append_event("error", msg)
-        try:
-            session.persist()
-        except Exception:
-            pass
-
-    try:
-        while steps < config.AGENT_MAX_STEPS:
-            if session.is_cancelled():
-                _append_event("info", "任务被用户取消")
-                break
-            if _t.time() - started > config.AGENT_MAX_RUNTIME:
-                _append_event("error", f"超过最大运行时长 {config.AGENT_MAX_RUNTIME}s")
-                break
-            if fails >= config.AGENT_MAX_CONSECUTIVE_FAILURES:
-                _append_event("error", f"连续失败 {fails} 次，停止自愈")
-                break
-            steps += 1
-            _append_event("info", f"--- step {steps}/{config.AGENT_MAX_STEPS} ---")
-
-            try:
-                system_prompt = load_system_prompt()
-            except Exception as e:
-                system_prompt = "你是 agent-services，只能返回单个 JSON 动作。"
-                _append_event("error", f"读 system.md 失败: {e}")
-
-            try:
-                messages = session.build_messages(system_prompt)
-            except Exception as e:
-                _append_event("error", f"组装 messages 失败: {e}")
-                break
-
-            try:
-                reply = deepseek.chat(messages)
-            except Exception as e:
-                fails += 1
-                _fail(f"DeepSeek 调用失败({fails}/{config.AGENT_MAX_CONSECUTIVE_FAILURES}): {type(e).__name__}: {e}")
-                continue
-
-            try:
-                session.append_history("assistant", reply)
-                _append_event("assistant", reply)
-                session.persist()
-            except Exception as e:
-                _append_event("error", f"写 history 失败: {e}")
-
-            try:
-                action = parse_action(reply)
-            except Exception as e:
-                fails += 1
-                _fail(f"parse_action 异常: {type(e).__name__}: {e}")
-                continue
-            if action is None:
-                fails += 1
-                _fail("无法解析为 JSON 动作，请只返回一个 JSON 对象，不要加解释或围栏")
-                continue
-            fails = 0
-
-            _act_str = json.dumps(action, ensure_ascii=False, sort_keys=True)
-            if _act_str == last_action_str:
-                repeat_count += 1
-            else:
-                last_action_str = _act_str
-                repeat_count = 0
-            if repeat_count >= 3:
-                _append_event("error", "连续 3 次相同动作，强制终止")
-                break
-
-            name = action.get("action")
-            _append_event("action", json.dumps(action, ensure_ascii=False)[:2000])
-
-            if name == "done":
-                _append_event("done", str(action.get("message", "")))
-                session.persist()
-                break
-
-            if name == "self_restart":
-                try:
-                    from app._robust import check_restart_allowed
-                    ok, reason = check_restart_allowed()
-                except Exception:
-                    ok, reason = True, ""
-                if not ok:
-                    _fail(f"self_restart 被拒绝: {reason}")
-                    continue
-
-            try:
-                result = execute_action(action)
-                fails = 0
-            except Exception as e:
-                fails += 1
-                result = {"error": f"{type(e).__name__}: {e}"}
-                _append_event("error", f"execute_action 失败({fails}/{config.AGENT_MAX_CONSECUTIVE_FAILURES}): {result['error']}")
-
-            try:
-                session.append_history("user", json.dumps(result, ensure_ascii=False))
-                try:
-                    session.record_step(action, result)
-                except Exception:
-                    pass
-                _append_event("result", json.dumps(result, ensure_ascii=False)[:2000])
-                session.persist()
-            except Exception as e:
-                _append_event("error", f"写结果失败: {e}")
-
-            if session.is_cancelled():
-                _append_event("info", "任务被用户取消")
-                break
-
-        if steps >= config.AGENT_MAX_STEPS:
-            _append_event("info", f"达到最大步数 {config.AGENT_MAX_STEPS}")
-    except Exception as e:
-        import traceback
-        _append_event("error", f"agent_loop 致命异常: {type(e).__name__}: {e}")
-        try:
-            session.append_history("user", json.dumps(
-                {"error": f"agent_loop 致命异常: {e}", "trace": traceback.format_exc()[-2000:]},
-                ensure_ascii=False))
-        except Exception:
-            pass
-    finally:
-        try:
-            session.set_status("idle")
-            session.clear_cancel()
-            session.persist()
-        except Exception:
-            pass
 
 @app.get("/")
 def index() -> FileResponse:
@@ -340,7 +75,7 @@ def api_context() -> JSONResponse:
         system_prompt = load_system_prompt()
     except Exception as e:
         system_prompt = "你是 agent-services，只能返回单个 JSON 动作。"
-        _append_event("error", f"读 system.md 失败: {e}")
+        session.add_event("error", f"读 system.md 失败: {e}")
     try:
         data = session.build_context_preview(system_prompt)
     except Exception as e:
@@ -397,8 +132,8 @@ async def api_chat(request: Request) -> JSONResponse:
     session.clear_cancel()
     session.persist()
 
-    t = threading.Thread(target=agent_loop, daemon=True)
-    t.start()
+    thread = threading.Thread(target=agent_loop, daemon=True)
+    thread.start()
     return JSONResponse({"ok": True, "status": "running"})
 
 
@@ -423,6 +158,7 @@ def api_restart() -> JSONResponse:
 def api_usage(conv_id: str = "", limit: int = 50) -> JSONResponse:
     """Token 消耗统计：全局 + 当前会话 + 最近调用记录。"""
     from app import usage as _usage
+
     cid = conv_id or session.get_conv_id()
     try:
         data = _usage.summary(conv_id=cid, limit=max(1, min(limit, 500)))
@@ -434,6 +170,7 @@ def api_usage(conv_id: str = "", limit: int = 50) -> JSONResponse:
 @app.post("/api/usage/reset", dependencies=[Depends(require_token)])
 def api_usage_reset() -> JSONResponse:
     from app import usage as _usage
+
     return JSONResponse(_usage.reset())
 
 
@@ -459,13 +196,18 @@ def _startup() -> None:
 
 
 _startup()
+_runtime.start()
 
 # manual ops
 from app._robust import register as _register_manual
+
 _register_manual(app)
 
 from app.memory_api import register as _register_memory
+
 _register_memory(app, require_token)
+
+register_plugin_routes(app, _runtime, require_token)
 
 
 if __name__ == "__main__":

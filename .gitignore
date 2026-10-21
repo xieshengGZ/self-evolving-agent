@@ -1,6 +1,7 @@
 # 密钥与配置
 .env
 .env.*
+!.env.example
 
 # 运行时状态
 state/

@@ -1,4 +1,3 @@
-import json
 import os
 import re
 import shutil
@@ -108,13 +107,13 @@ def do_shell(command: str, timeout: Optional[int] = None) -> Dict[str, Any]:
         }
 
     if timeout is None:
-        timeout = config.CMD_TIMEOUT
+        timeout = config.AGENT_CMD_TIMEOUT
     try:
         timeout = int(timeout)
     except (TypeError, ValueError):
-        timeout = config.CMD_TIMEOUT
+        timeout = config.AGENT_CMD_TIMEOUT
     if timeout <= 0:
-        timeout = config.CMD_TIMEOUT
+        timeout = config.AGENT_CMD_TIMEOUT
 
     try:
         proc = subprocess.Popen(
@@ -303,74 +302,3 @@ def do_rebuild_index() -> Dict[str, Any]:
 
 def do_done(message: str = "") -> Dict[str, Any]:
     return {"result_of": "done", "message": message or ""}
-
-
-# ---------------------------------------------------------------------------
-# 动作分发
-# ---------------------------------------------------------------------------
-
-def execute_action(action: Dict[str, Any]) -> Dict[str, Any]:
-    """根据动作字典执行对应动作，返回结果字典。"""
-    if not isinstance(action, dict):
-        return {"error": "动作必须是 JSON 对象"}
-
-    name = action.get("action")
-    if not name:
-        return {"error": "动作缺少 action 字段"}
-
-    try:
-        if name == "shell":
-            return do_shell(action.get("command", ""), action.get("timeout"))
-        if name == "write_file":
-            return do_write_file(action.get("path", ""), action.get("content", ""))
-        if name == "read_file":
-            return do_read_file(action.get("path", ""), action.get("max_bytes"))
-        if name == "self_restart":
-            return do_self_restart(action.get("reason", ""))
-        if name == "read_symbol":
-            return do_read_symbol(action.get("symbol", ""))
-        if name == "read_file_summary":
-            return do_read_file_summary(action.get("path", ""))
-        if name == "rebuild_index":
-            return do_rebuild_index()
-        if name == "done":
-            return do_done(action.get("message", ""))
-    except Exception as exc:  # noqa: BLE001
-        return {"error": f"执行动作 {name} 时异常: {exc}"}
-
-    return {"error": f"未知动作: {name}"}
-
-
-def parse_action(text: str) -> Optional[Dict[str, Any]]:
-    """从模型输出中解析 JSON 动作。失败返回 None。"""
-    if not text:
-        return None
-    text = text.strip()
-    # 去掉可能的 markdown 代码围栏
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip().startswith("```"):
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
-
-    try:
-        obj = json.loads(text)
-        if isinstance(obj, dict):
-            return obj
-    except json.JSONDecodeError:
-        pass
-
-    # 尝试提取第一个 {...} 块
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        candidate = text[start : end + 1]
-        try:
-            obj = json.loads(candidate)
-            if isinstance(obj, dict):
-                return obj
-        except json.JSONDecodeError:
-            return None
-    return None

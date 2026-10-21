@@ -1,0 +1,9 @@
+{
+  "name": "tools_basic",
+  "version": "0.1.0",
+  "api_version": 1,
+  "entry": "plugin.py",
+  "status": "active",
+  "description": "Core shell, filesystem, self-restart, and symbol-index tools",
+  "config": {}
+}
