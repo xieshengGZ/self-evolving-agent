@@ -26,6 +26,18 @@ CHAT_PATTERNS = [
     r"^(再见|拜拜|bye|晚安)[\s!！。]*$",
 ]
 
+QUESTION_PATTERNS = [
+    r"是什么", r"什么是", r"为什么", r"为啥", r"为何", r"啥是", r"啥意思",
+    r"有什么区别", r"区别", r"不同", r"怎么(?:回|样|回事|理解|用|工作|实现)",
+    r"如何(?:理解|用|工作|实现)", r"解释", r"介绍", r"讲讲", r"讲一下",
+    r"说说", r"科普", r"原理", r"what\s+is", r"what's", r"difference\s+between",
+    r"how\s+does",
+]
+
+EXPLICIT_TASK_PATTERNS = [
+    r"^(?:请|帮我|帮忙|麻烦|给我|替我|请你)?\s*(?:把|将)?.{0,40}(?:写|创建|生成|修改|删除|运行|执行|安装|部署|提交|推送|查看|读取|分析|检查|修复|实现|优化|重构|新增|添加|更新|配置|启动|停止|重启)",
+]
+
 TASK_VERBS = [
     "执行", "运行", "创建", "修改", "删除", "部署", "安装", "读取",
     "查询", "启动", "停止", "重启", "编译", "测试", "提交", "推送",
@@ -36,6 +48,10 @@ TASK_VERBS = [
 
 def _match(patterns, text: str) -> bool:
     return any(re.match(pattern, text, re.I) for pattern in patterns)
+
+
+def _search(patterns, text: str) -> bool:
+    return any(re.search(pattern, text, re.I) for pattern in patterns)
 
 
 def _rules(text: Any) -> str:
@@ -50,9 +66,13 @@ def _rules(text: Any) -> str:
         return "continuation"
     if _match(CHAT_PATTERNS, value):
         return "chat"
+    if _match(EXPLICIT_TASK_PATTERNS, value):
+        return "task"
     low = value.lower()
     if any(verb in low for verb in TASK_VERBS):
         return "task"
+    if _search(QUESTION_PATTERNS, value):
+        return "chat"
     return "task"
 
 

@@ -42,6 +42,22 @@ def test_classifier_plugin_rules():
     assert hooks.emit("classify.prompt", text="继续") == ["continuation"]
     assert hooks.emit("classify.prompt", text="停止") == ["control"]
     assert hooks.emit("classify.prompt", text="部署服务") == ["task"]
+    assert hooks.emit(
+        "classify.prompt",
+        text="事件经 SSE 推前端、状态持久化到 SQLite。 sse是什么，sqlite是什么",
+    ) == ["chat"]
+    assert hooks.emit("classify.prompt", text="SSE 和 SQLite 有什么区别？") == ["chat"]
+
+
+def test_classifier_keeps_concept_questions_out_of_task_mode():
+    from app import classifier
+
+    assert classifier.classify(
+        "事件经 SSE 推前端、状态持久化到 SQLite。 sse是什么，sqlite是什么"
+    ) == "chat"
+    assert classifier.classify("解释一下 SSE 和 SQLite") == "chat"
+    assert classifier.classify("帮我把 SSE 和 SQLite 写成文档") == "task"
+    assert classifier.classify("查看 app/main.py") == "task"
 
 
 def test_planning_plugin_create_and_reset():

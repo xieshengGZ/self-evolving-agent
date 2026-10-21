@@ -120,3 +120,28 @@
 
 - Phase 4：类型化特权操作、root helper、审批/审计、快照/回滚。
 - 上下文增强：内置 LLM 压缩后端、artifact 清理策略。
+
+## 2026-10-21 — 修复概念问题被误判为任务
+
+**现象**
+
+- 用户问“事件经 SSE 推前端、状态持久化到 SQLite。sse是什么，sqlite是什么”，被 classifier 判为 `task`。
+- planning 生成了 `docs/sse_sqlite.md` 的验收计划；模型直接 `done` 回答概念，验收失败，重规划 2 次后计划 failed。
+- 过程中模型还返回过 `{"kind":"assistant","message":"..."}`，被 runtime 报“动作缺少 action 字段”。
+
+**根因**
+
+- `app/classifier.py` 与 `plugins/classifier` 的规则只有控制/继续/问候，其余默认 `task`；没有识别疑问/解释类问题。
+- 任务模式下的 done 必须满足计划验收，回答概念不能替代计划文件。
+
+**修复**
+
+- classifier 增加 `QUESTION_PATTERNS` 与 `EXPLICIT_TASK_PATTERNS`：
+  - `是什么`/`什么是`/`区别`/`解释`/`介绍` 等归 `chat`；
+  - “帮我写/创建/查看/分析……”等显式动作仍归 `task`。
+- 新增单测覆盖用户原句、概念问题、显式写作任务；`make check` 51 passed。
+- 线上重启后用原句调用 `/api/chat`，返回 `mode=chat`，正常直接回答，不再创建计划。
+
+**注意**
+
+- 该会话中旧的 failed 计划仍在 `state`，可用 `POST /api/plugin/planning/reset` 清理；新逻辑不会再为概念问题建计划。
