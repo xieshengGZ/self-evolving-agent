@@ -314,6 +314,15 @@ class PluginManager:
                 return planner
         return None
 
+    def context_builders(self) -> List[tuple[int, str, Any]]:
+        with self._lock:
+            plugins = list(self._plugins.values())
+        builders: List[tuple[int, str, Any]] = []
+        for loaded in plugins:
+            for order, builder in loaded.layer.context.entries():
+                builders.append((order, loaded.manifest.name, builder))
+        return sorted(builders, key=lambda item: item[0])
+
     def planner_names(self) -> List[str]:
         names: List[str] = []
         with self._lock:
@@ -341,6 +350,7 @@ class PluginManager:
             "plugins": self.list_plugins(),
             "tools": self.tool_names(),
             "planners": self.planner_names(),
+            "context_builders": [name for _, name, _ in self.context_builders()],
             "errors": self.errors(),
         }
 

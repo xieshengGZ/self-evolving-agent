@@ -78,3 +78,10 @@
 - **背景**：`classifier` 原为 `app/classifier.py` 规则匹配；为了可替换分类策略，需要插件入口，但为一个单函数能力新增注册表会扩大内核 API。
 - **决定**：内核在 `classifier.classify()` 中发布 `classify.prompt` 钩子，按插件加载顺序取第一个合法返回值；插件缺失、抛异常或返回非法值时回退规则匹配。模式固定为 `chat/task/continuation/control`。
 - **后果**：`classifier` 可热替换且无需提升 `api_version`；钩子模型保持“旁路增强”，主流程不会因分类插件故障中断。
+
+## ADR-012 — 上下文用 Section + 内核预算，插件只提供片段
+
+- **日期**：2026-10-21
+- **背景**：`session.build_messages()` 硬编码 system/memory/task/plan/history，无法按 token 预算裁剪，也无法热替换记忆/历史策略；工具大结果虽然截断，但仍会挤占窗口。
+- **决定**：`app/context.py` 定义 Section 模型、token 估算、预算排序/截断/丢弃和 artifact 卸载；`context_base/context_plan/context_memory/context_window` 通过 `ctx.context` 注册 section builder。内核按 `order` 渲染、按 `priority` 保留；超预算时先调用可选的 `context.compress` 钩子，否则确定性压缩。`session.build_messages()` 仅作 fallback。
+- **后果**：上下文策略可单独热替换；预算和顺序由内核统一保证。token 估算是启发式（非 tokenizer 精确值），压缩模型后端尚未内置，当前以确定性裁剪 + hook 扩展点为主；artifacts 需要后续定期清理策略。

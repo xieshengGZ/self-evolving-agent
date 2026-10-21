@@ -1,0 +1,9 @@
+{
+  "name": "context_plan",
+  "version": "0.1.0",
+  "api_version": 1,
+  "entry": "plugin.py",
+  "status": "active",
+  "description": "Context section: current execution plan",
+  "config": {}
+}

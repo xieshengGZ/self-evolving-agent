@@ -92,3 +92,31 @@
 **下一步**
 
 - Phase 3：上下文插件（Section + token 预算 + artifact 卸载）。
+
+## 2026-10-21 — Phase 3：上下文插件
+
+**做了什么**
+
+- 新增 `app/context.py`：`Section` 模型、token 估算、按 `priority` 保留/按 `order` 渲染、预算截断/丢弃、artifact 卸载、ledger。
+- 新增 `plugins/context_base`（system/task）、`context_plan`（plan_text）、`context_memory`（提炼记忆）、`context_window`（逐条历史）。
+- `ContextRegistry.entries()`、`PluginManager.context_builders()`、`KernelRuntime.context_builders()`；plugin snapshot 暴露 builder 名称。
+- loop 与 chat 改用 `context.build()`；大工具结果经 `offload_result()` 落盘到 `state/artifacts/<conv_id>/`，history/event 只写摘要。
+- `/api/context` 返回 messages、parts、ledger；新增 `context.compress` hook 作为可替换压缩后端。
+- 配置新增 `AGENT_CONTEXT_BUDGET=12000`、`AGENT_CONTEXT_PRESSURE=0.7`、`AGENT_CONTEXT_MEMORY_MAX_CHARS=6000`、`AGENT_ARTIFACT_OFFLOAD=1`、`AGENT_ARTIFACT_THRESHOLD=2000`。
+- 更新 ARCHITECTURE / CONTRACTS / DECISIONS ADR-012 / ROADMAP / STATUS / README / AGENTS。
+
+**为什么**
+
+- 旧 `session.build_messages()` 硬编码，无法按 token 预算裁剪，也不能热替换记忆/历史策略；大工具结果仍挤占窗口。
+
+**验证**
+
+- `make check`：**50 passed**，`compileall` 通过；`git diff --check` 通过。
+- 单测覆盖：预算保留/丢弃、token 截断、压力触发 `context.compress`、fallback 系统段兜底、artifact 卸载/防路径逃逸、4 个真实 context 插件加载、runtime builder 接线。
+- 临时根目录 E2E：8 插件加载，`/api/context` sections/ledger 正常，budget=500 时 system 超预算后正确丢弃可选段。
+- 线上 idle 后重启：8 插件加载，`/api/context` 使用 7557/12000 tokens，fallback=false、builder_errors=[]。
+
+**下一步**
+
+- Phase 4：类型化特权操作、root helper、审批/审计、快照/回滚。
+- 上下文增强：内置 LLM 压缩后端、artifact 清理策略。

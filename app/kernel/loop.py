@@ -9,7 +9,7 @@ import re
 import time
 from typing import Any, Dict, List, Optional
 
-from app import config, deepseek, planning, session
+from app import config, context, deepseek, planning, session
 from app.kernel import get_runtime
 
 FALLBACK_PROMPT = (
@@ -186,7 +186,7 @@ def agent_loop() -> None:
                 _append_event("error", f"读 system.md 失败: {exc}")
 
             try:
-                messages = session.build_messages(system_prompt)
+                messages = context.build(system_prompt, runtime=runtime)["messages"]
             except Exception as exc:  # noqa: BLE001
                 _append_event("error", f"组装 messages 失败: {exc}")
                 break
@@ -310,12 +310,14 @@ def agent_loop() -> None:
                     _append_event("warn", f"记录计划步骤失败: {exc}")
 
             try:
-                session.append_history("user", json.dumps(result, ensure_ascii=False))
+                summary, _artifact = context.offload_result(action, result)
+                context_result = json.dumps(summary, ensure_ascii=False)
+                session.append_history("user", context_result)
                 try:
                     session.record_step(action, result)
                 except Exception:  # noqa: BLE001
                     pass
-                _append_event("result", json.dumps(result, ensure_ascii=False)[:2000])
+                _append_event("result", context_result[:2000])
                 session.persist()
             except Exception as exc:  # noqa: BLE001
                 _append_event("error", f"写结果失败: {exc}")

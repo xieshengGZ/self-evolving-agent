@@ -185,6 +185,10 @@ class ContextRegistry:
         with self._lock:
             return [builder for _, builder in sorted(self._builders, key=lambda item: item[0])]
 
+    def entries(self) -> List[tuple[int, Any]]:
+        with self._lock:
+            return list(sorted(self._builders, key=lambda item: item[0]))
+
     def describe(self) -> List[Any]:
         with self._lock:
             return [

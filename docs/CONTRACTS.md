@@ -57,7 +57,7 @@ def teardown(ctx: PluginContext) -> None:      # 可选
 | `ctx.hooks` | `HookBus` | 订阅/发布生命周期事件 |
 | `ctx.http` | `HttpRegistry` | 注册 `/api/plugin/{name}/{op}` 处理器 |
 | `ctx.planners` | `PlannerRegistry` | 注册任务规划器（默认名 `default`） |
-| `ctx.context` | `ContextRegistry` | 注册上下文构建器（Phase 3） |
+| `ctx.context` | `ContextRegistry` | 注册上下文 section builder |
 | `ctx.store` | `Store` | 读写会话/事件/状态，查询 SQLite |
 | `ctx.bus` | `EventBus` | 进程内事件 |
 | `ctx.llm` | module | `app.deepseek`，惰性导入 |
@@ -125,6 +125,49 @@ ctx.planners.register("default", Planner())
 `command` / `test` / `exit_code` 在 `AGENT_ROOT` 下执行，受 `AGENT_CMD_TIMEOUT` 与危险命令拦截约束。
 没有验收项时，计划完成视为通过；需要强保证时请写验收项。
 
+## 上下文 Section
+
+`app/context.py` 持有 section 模型、token 预算、截断/丢弃和最终 messages；
+上下文插件只返回 section dict。注册方式：
+
+```python
+def builder(store, system_prompt):
+    return [{
+        "kind": "task",
+        "role": "user",
+        "label": "当前任务",
+        "content": "当前任务：" + store.get_task(),
+        "priority": 900,
+        "order": 10,
+        "required": True,
+        "compressible": True,
+    }]
+
+ctx.context.register(builder, order=100)
+```
+
+字段：
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `kind` | `section` | 语义类别，如 `system/task/plan/memory/history` |
+| `role` | `system` | 渲染后的 message role：`system/user/assistant` |
+| `content` | `""` | 文本内容 |
+| `priority` | 按 kind/role | 预算保留优先级，越大越先保留 |
+| `order` | 注册顺序 | 最终 message 顺序，越小越靠前 |
+| `required` | `false` | 必需 section；预算不足也保留 |
+| `compressible` | `true` | 预算不足时允许截断 |
+| `label` / `source` / `metadata` | 空 | 仅用于 ledger 展示 |
+
+- 同一插件可注册多个 builder；不同插件按 `order` 聚合。
+- 内核至少保证一个 `system` section；当前有任务时保证一个 `task` section。
+- 历史消息应逐条返回，并让新消息的 `priority` 更高；预算不足时先丢旧消息。
+- 预算由 `AGENT_CONTEXT_BUDGET`（默认 12000 tokens）控制；估算规则为 ASCII 约 4 字符/token、非 ASCII 约 1 字符/token。
+- 达到 `AGENT_CONTEXT_PRESSURE`（默认 0.7）时先调用 `context.compress` 钩子；超预算且无钩子结果时再做确定性截断/丢弃。
+- 大型工具结果由内核卸载到 `state/artifacts/<conv_id>/`，上下文只保留摘要、预览和 artifact 路径；阈值 `AGENT_ARTIFACT_THRESHOLD`（默认 2000 字符）。
+
+`GET /api/context` 返回 `messages`、`parts` 和 `ledger`（预算、使用量、每段 tokens、是否截断/丢弃、builder 错误）。
+
 ## HTTP op
 
 ```python
@@ -162,6 +205,7 @@ Content-Type: application/json
 | `get_status()` / `set_status()` | 运行状态 |
 | `get_conv_id()` / `new_conversation(task)` | 会话切换 |
 | `get_task()` / `set_task()` / `get_task_state()` / `set_task_state()` | 任务与计划状态 |
+| `get_memory_text(max_bytes=6000)` | 当前会话的提炼记忆 Markdown |
 | `list_sessions(limit=50)` | 最近会话（SQLite） |
 | `save_plan(...)` / `update_plan(id, ...)` / `get_plan(id)` / `get_plans(conv_id)` | 计划持久化与查询 |
 | `db_path()` | 当前数据库路径 |
@@ -201,7 +245,7 @@ def handler(**kwargs): ...
 | `before_step` | 每次模型调用前 |
 | `after_step` | 工具执行并记录后 |
 | `plan.created` / `plan.revised` | 计划创建/重规划后 |
-| `context.built` | Phase 3 |
+| `context.compress` | 上下文超预算时；返回 section 列表可替换默认压缩 |
 
 钩子异常会被记录，不影响主流程。
 

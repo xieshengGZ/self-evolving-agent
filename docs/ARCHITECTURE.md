@@ -54,6 +54,7 @@
 | `app/kernel/bus.py` | 进程内事件总线，可桥接 session 事件 |
 | `app/kernel/loop.py` | agent 主循环、system prompt 加载、动作 JSON 解析、计划推进 |
 | `app/planning.py` | `Plan`/`PlanStep`、状态迁移、确定性验收、计划持久化/恢复 |
+| `app/context.py` | Section 模型、token 预算、section 排序/截断、artifact 卸载、`/api/context` ledger |
 | `app/kernel/http.py` | `/api/plugins`、`/api/plugins/{name}/reload`、`/api/plugin/{name}/{op}` |
 | `app/kernel/sse.py` | `/api/events` SSE：backlog、实时事件、状态快照、心跳 |
 | `app/kernel/context.py` | `PluginContext`：插件能看到的唯一 API |
@@ -134,13 +135,45 @@ POST /api/chat
   → 模式路由：chat / task / continuation / control
   → 后台线程 agent_loop
       → planning 插件（ctx.planners.default）→ Plan（状态机在 app/planning.py）
-      → session.build_messages（含 plan_text；Phase 3 迁 context 插件）
+      → context 插件（system/task/plan/memory/history sections）
+      → app/context.py 预算/排序/截断 → messages
       → deepseek.chat
       → kernel.loop.parse_action
       → runtime.execute_tool → tools_basic 插件
+      → 大结果 artifact 卸载 → 上下文只放摘要 + 路径
       → planning.record_result / 失败重规划 / done 前验收
       → session 记录 → SQLite（messages/events/plans）+ 通知 SSE 订阅者
 ```
+
+## 上下文装配
+
+```
+context_base    system, task        registry 10/20（section 0/10）
+context_memory  memory              registry 40（section 15）
+context_plan    plan_text           registry 30（section 20）
+context_window  history 每条消息     registry 50（section 100+）
+        │
+        ▼
+ContextRegistry → PluginManager.context_builders()（跨插件按 order 聚合）
+        │
+        ▼
+app/context.py:
+  1. 归一化 section
+  2. 计算 token 估算
+  3. 达到 pressure 时可选调用 context.compress 钩子
+  4. required 先保留；可选 section 按 priority 从高到低分配
+  5. 超预算：可压缩 section 截断；否则丢弃
+  6. 按 order 渲染 messages
+        │
+        ▼
+ledger: budget/used/pressure/compressed/omitted/每段 tokens
+```
+
+- 预算默认 12000 tokens，压力阈值 70%；配置见 `AGENT_CONTEXT_BUDGET` / `AGENT_CONTEXT_PRESSURE`。
+- 历史消息逐条成 section，新消息 priority 更高，因此预算不足先丢旧消息。
+- 工具结果超过 `AGENT_ARTIFACT_THRESHOLD` 时写入 `state/artifacts/<conv_id>/*.json`，
+  上下文只保留 `stdout/stderr/content` 预览、字节数和 artifact 路径。
+- `session.build_messages()` 保留为无插件/插件失败时的兼容 fallback。
 
 ## 事件流（SSE）
 
@@ -167,6 +200,8 @@ POST /api/chat
 
 `state/session.json` 不再写入；启动时自动迁移一次（`meta.json_migrated` 防重复），
 也可手动执行 `python -m app.migrate`。迁移不删除原文件，便于回滚核对。
+
+工具大结果写入 `state/artifacts/<conv_id>/`（JSON，不入库）；SQLite 仍保存上下文摘要。
 
 ## 依赖规则
 

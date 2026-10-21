@@ -1,0 +1,9 @@
+{
+  "name": "context_base",
+  "version": "0.1.0",
+  "api_version": 1,
+  "entry": "plugin.py",
+  "status": "active",
+  "description": "Context sections: system prompt and current task",
+  "config": {}
+}

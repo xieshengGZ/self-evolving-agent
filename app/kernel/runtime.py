@@ -44,6 +44,9 @@ class KernelRuntime:
     def get_planner(self, name: str = "default") -> Any:
         return self.plugins.get_planner(name)
 
+    def context_builders(self) -> list[tuple[int, str, Any]]:
+        return self.plugins.context_builders()
+
     def emit_hook(self, event: str, **kwargs: Any) -> list[Any]:
         return self.plugins.emit_hook(event, **kwargs)
 

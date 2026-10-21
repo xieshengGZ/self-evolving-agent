@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from app import session, storage as storage_mod
+from app import config, memory, session, storage as storage_mod
 
 
 class Store:
@@ -58,6 +58,10 @@ class Store:
 
     def get_task_state(self) -> Dict[str, Any]:
         return session.get_task_state()
+
+    def get_memory_text(self, max_bytes: Optional[int] = None) -> str:
+        limit = config.AGENT_CONTEXT_MEMORY_MAX_CHARS if max_bytes is None else max_bytes
+        return memory.read_text(session.get_conv_id(), max_bytes=limit)
 
     def set_task_state(self, state: Dict[str, Any]) -> None:
         session.set_task_state(state)

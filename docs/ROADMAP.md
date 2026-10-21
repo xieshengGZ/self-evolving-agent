@@ -34,13 +34,13 @@
 - [x] `classifier` 插件化（chat / task / continuation / control）
 - [x] 同会话新任务强制 `reset_plan`
 
-## Phase 3 — 上下文管理插件
+## Phase 3 — 上下文管理插件（已完成）
 
-- [ ] `Section` 模型 + token 预算 + 分层优先级
-- [ ] `context_base` / `context_plan` / `context_memory` / `context_window`
-- [ ] 工具结果 artifact 卸载（原文落盘，上下文只放摘要 + 引用）
-- [ ] token 账本 + `/api/context` 展示每段预算
-- [ ] 压力触发压缩（60~70%）与可替换压缩后端
+- [x] `Section` 模型 + token 预算 + 分层优先级
+- [x] `context_base` / `context_plan` / `context_memory` / `context_window`
+- [x] 工具结果 artifact 卸载（原文落盘，上下文只放摘要 + 引用）
+- [x] token 账本 + `/api/context` 展示每段预算
+- [x] 压力触发压缩（60~70%）与可替换压缩后端
 
 ## Phase 4 — 主机治理（另议）
 

@@ -1,0 +1,9 @@
+{
+  "name": "context_memory",
+  "version": "0.1.0",
+  "api_version": 1,
+  "entry": "plugin.py",
+  "status": "active",
+  "description": "Context section: long-term distilled memory",
+  "config": {}
+}

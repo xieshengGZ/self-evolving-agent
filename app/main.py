@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
-from app import classifier, config, deepseek, planning, selfupdate, session
+from app import classifier, config, context, deepseek, planning, selfupdate, session
 from app.kernel import get_runtime
 from app.kernel.http import register_plugin_routes
 from app.kernel.loop import agent_loop, load_system_prompt
@@ -119,7 +119,7 @@ def api_context() -> JSONResponse:
         system_prompt = "你是 agent-services，只能返回单个 JSON 动作。"
         session.add_event("error", f"读 system.md 失败: {e}")
     try:
-        data = session.build_context_preview(system_prompt)
+        data = context.preview(system_prompt, runtime=_runtime)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"组装上下文失败: {e}")
     return JSONResponse({"ok": True, **data})
@@ -214,7 +214,7 @@ async def api_chat(request: Request) -> JSONResponse:
     if mode == "chat":
         try:
             session.add_event("info", "闲聊模式")
-            msgs = session.build_messages(load_system_prompt())
+            msgs = context.build(load_system_prompt(), runtime=_runtime)["messages"]
             reply = deepseek.chat(msgs)
             if isinstance(reply, dict):
                 reply = reply.get("message") or reply.get("content") or str(reply)

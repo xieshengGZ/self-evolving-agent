@@ -4,50 +4,53 @@
 
 ## 当前阶段
 
-Phase 0 / 1 / 2 完成：稳定内核、插件热插拔、SSE + SQLite、规划状态机。
-下一阶段：Phase 3 上下文管理插件。
+Phase 0 / 1 / 2 / 3 完成：稳定内核、插件热插拔、SSE + SQLite、规划状态机、上下文预算与 artifact。
+下一阶段：Phase 4 主机治理（另议）。
 
 ## 上次完成（2026-10-21）
 
 - 建立 `AGENTS.md` + `docs/` 项目记忆；拆分 `app/kernel/`
-- 插件加载器：`plugin.json`、原子热替换、失败保留旧版；`tools_basic` / `hello`
-- SQLite `state/agent.db`（sessions/messages/events/plans/meta）+ `session.json` 一次性迁移
-- SSE `GET /api/events`，前端 EventSource 替代 1s 轮询；支持 `Last-Event-ID`
-- Phase 2：`app/planning.py`（Plan/PlanStep、状态机、恢复、确定性验收）
-- Phase 2：`plugins/planning`（`ctx.planners.default`，create/revise，status/reset）
-- Phase 2：`plugins/classifier`（hook `classify.prompt`，chat/task/continuation/control）
-- Phase 2：新任务清旧计划；`continuation` 保留计划；`done` 前强制验收
-- `plans` schema v2：`acceptance/current_step/revision`，旧库启动自动补列
-- `app/session.py` 补 `snapshot` 与 getter，`plan_text` 注入每轮上下文
+- 插件加载器：`plugin.json`、原子热替换、失败保留旧版
+- SQLite `state/agent.db` + `session.json` 一次性迁移；SSE `GET /api/events`
+- Phase 2：`app/planning.py` + `plugins/planning` + `plugins/classifier`
+- Phase 3：`app/context.py`：Section 模型、token 预算、优先级、截断/丢弃、ledger
+- Phase 3：`plugins/context_base/plan/memory/window` 四个 section 插件
+- Phase 3：大工具结果 artifact 卸载到 `state/artifacts/`，上下文保留摘要+路径
+- Phase 3：超预算触发 `context.compress` hook；无 hook 时确定性压缩
+- `/api/context` 返回 messages、parts 和预算 ledger
+- 配置：`AGENT_CONTEXT_BUDGET` / `AGENT_CONTEXT_PRESSURE` / `AGENT_ARTIFACT_*`
 
 ## 已知问题
 
-- 上下文仍在 `session.build_messages` 硬编码，未插件化（Phase 3）
-- `acceptance` 为空时计划完成即通过；需要强保证时必须写验收项
-- `depends_on` 仅展示，尚未参与调度
-- `classifier` 依赖插件；插件异常时回退 `app/classifier.py` 规则
+- token 估算是启发式（ASCII/4、非 ASCII/1），不是准确 tokenizer
+- `context.compress` 只有扩展点，尚未内置 LLM 压缩后端
+- artifact 目录尚无自动清理/保留上限
+- `depends_on` 仅展示，尚未参与计划调度
 - SSE token 走查询参数，可能进入访问日志（单用户环境可接受，ADR-009）
 - `state/session.json` 迁移后保留，确认稳定后可手动归档
 
 ## 下一步（3）
 
-1. Phase 3：`context` 插件（Section 模型 + token 预算 + 分层优先级）
-2. Phase 3：工具结果 artifact 卸载 + `/api/context` 预算展示
-3. Phase 3：压力触发压缩与可替换压缩后端
+1. Phase 4：类型化特权操作 + root helper + 审批/审计
+2. Phase 4：快照/回滚与沙箱策略
+3. Phase 3 收尾：LLM 压缩后端 + artifact 清理
 
 ## 插件状态
 
 | 插件 | 版本 | 状态 | 能力 |
 |---|---|---|---|
-| `tools_basic` | 0.1.0 | active | shell / read_file / write_file / self_restart / 符号工具 |
-| `planning` | 0.1.0 | active | LLM 计划 create/revise；`status` / `reset` HTTP op |
-| `classifier` | 0.1.0 | active | `classify.prompt` hook；四模式分类 |
-| `hello` | 0.1.0 | experimental | 热加载演示：`hello_ping` 工具 + `ping` HTTP op |
+| `tools_basic` | 0.1.0 | active | shell / 文件工具 / self_restart / 符号工具 |
+| `planning` | 0.1.0 | active | 计划 create/revise；`status` / `reset` |
+| `classifier` | 0.1.0 | active | `classify.prompt` 四模式分类 |
+| `context_base` | 0.1.0 | active | system / task sections |
+| `context_plan` | 0.1.0 | active | plan section |
+| `context_memory` | 0.1.0 | active | memory section |
+| `context_window` | 0.1.0 | active | history sections |
+| `hello` | 0.1.0 | experimental | 热加载演示 |
 
 ## 最近验证
 
-- 2026-10-21：`make check` **40 passed**；`compileall` 通过。
-- Phase 2 集成测试：计划创建/执行/验收、失败重规划、重启恢复、新任务清计划。
-- control 在 running 状态也可用；修复 `/api/stop` 调用不存在的 `actions.kill_current_process`。
-- 临时根目录 E2E：4 插件加载，`planning.status` 正常，`/api/chat` 的“状态”经 classifier 走 control，`/api/state` 含 `plan`。
-- 线上服务已于 17:32 重启；4 插件加载，plans 表已补 `acceptance/current_step/revision`，schema_version=2；SSE 正常。
+- 2026-10-21：`make check` **50 passed**；`compileall` 通过。
+- 上下文单测：预算保留/丢弃、压力触发 `context.compress`、fallback、artifact 卸载、真实 context 插件。
+- 临时根目录 E2E：8 插件加载；`/api/context` 返回 sections/ledger，预算 500 时 system 超预算后正确丢弃可选段。
+- 线上服务已重启加载 Phase 3：8 插件、`/api/context` ledger 正常；默认预算 12000，当前使用 7557、无压缩。

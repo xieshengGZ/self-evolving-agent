@@ -13,7 +13,7 @@
 
 ## 现在在哪
 
-- 当前阶段：**Phase 0 + 1 + 2 完成**（稳定内核 + 热插拔 + SSE/SQLite + 规划状态机）
+- 当前阶段：**Phase 0 + 1 + 2 + 3 完成**（稳定内核 + 热插拔 + SSE/SQLite + 规划 + 上下文预算/artifact）
 - 现状唯一真源：`docs/STATUS.md`
 - 路线图：`docs/ROADMAP.md`
 - 架构：`docs/ARCHITECTURE.md`
@@ -54,18 +54,23 @@ app/kernel/            # 稳定内核，不 import 任何插件
 app/storage.py         # SQLite：sessions/messages/events/plans
 app/session.py         # 内存热状态 + SQLite 持久化
 app/planning.py        # Plan/PlanStep、状态机、确定性验收、计划持久化
+app/context.py         # Section、token 预算、压缩/丢弃、artifact 卸载、ledger
 state/agent.db         # 运行时数据库（不入库）
 plugins/
   tools_basic/         # shell / read / write / self_restart / 符号工具
   planning/            # LLM 任务规划器（ctx.planners.default）
   classifier/          # chat/task/continuation/control 分类（hook）
+  context_base/        # system/task sections
+  context_plan/        # plan_text section
+  context_memory/      # 长期记忆 section
+  context_window/      # 工作窗口历史 messages
   hello/               # 热加载演示插件
 docs/                  # 项目记忆
 tests/                 # 可执行的记忆
 ```
 
 依赖方向只有一条：`main → kernel → plugins`。
-`app/planning.py` 是内核与 planning 插件共享的稳定领域层。
+`app/planning.py` 是内核与 planning 插件共享的稳定领域层；`app/context.py` 是上下文预算/渲染的稳定层。
 **插件之间、插件与 main.py 之间禁止互相 import**，只能通过 `ctx` 交互。
 
 ## 铁律
