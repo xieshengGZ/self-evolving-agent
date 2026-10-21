@@ -6,7 +6,7 @@
 
 1. **新能力不重启上线**：工具、规划器、上下文策略、HTTP op 都是插件，可热替换。
 2. **低耦合**：内核不 import 插件，插件不 import 内核实现细节，只依赖 `ctx`。
-3. **可恢复**：每一步可持久化，进程重启后能继续（Phase 1 完整化）。
+3. **可恢复**：每一步可持久化，进程重启后能继续（SQLite 已落地）。
 4. **可交接**：新人/AI 读 `AGENTS.md` + `STATUS.md` 就能接手。
 
 ## 分层
@@ -34,8 +34,12 @@
 └──────────────────────────┘   └────────────────────────┘
             │
 ┌───────────▼────────────────────────────────────────┐
-│ Store（当前委托 session，Phase 1 完整化后 SQLite）    │
-│  events / history / status / task_state / memory    │
+│ Store（session 热状态 + SQLite 持久化）              │
+│  sessions / messages / events / plans               │
+└───────────────────────┬────────────────────────────┘
+                        │
+┌───────────────────────▼────────────────────────────┐
+│ app/storage.py → state/agent.db (WAL)              │
 └────────────────────────────────────────────────────┘
 ```
 
@@ -46,11 +50,14 @@
 | `app/kernel/registry.py` | `ToolRegistry` / `HookBus` / `HttpRegistry` / `PlannerRegistry` / `ContextRegistry`，每个插件一份 `RegistrySet` |
 | `app/kernel/plugins.py` | 扫描 `plugins/*/plugin.json`；版本化模块名加载；staging → 校验 → 原子替换 → teardown 旧版 |
 | `app/kernel/runtime.py` | `KernelRuntime` 单例：`Store` + `EventBus` + `PluginManager`；`execute_tool` / `snapshot` |
-| `app/kernel/store.py` | 存储 seam；当前委托 `app.session`，后续迁移 SQLite 时只改这里 |
+| `app/kernel/store.py` | 插件可见的存储 API；实时状态走 `session`，查询/计划走 `Storage` |
 | `app/kernel/bus.py` | 进程内事件总线，可桥接 session 事件 |
 | `app/kernel/loop.py` | agent 主循环、system prompt 加载、动作 JSON 解析 |
 | `app/kernel/http.py` | `/api/plugins`、`/api/plugins/{name}/reload`、`/api/plugin/{name}/{op}` |
+| `app/kernel/sse.py` | `/api/events` SSE：backlog、实时事件、状态快照、心跳 |
 | `app/kernel/context.py` | `PluginContext`：插件能看到的唯一 API |
+| `app/storage.py` | SQLite 持久化与 `session.json` 一次性迁移 |
+| `app/session.py` | 内存工作窗口 + 事件订阅/条件变量 + `Storage` 写入 |
 
 ## 插件模型
 
@@ -109,8 +116,34 @@ POST /api/chat
       → deepseek.chat
       → kernel.loop.parse_action
       → runtime.execute_tool → tools_basic 插件
-      → session 记录 + persist
+      → session 记录 → SQLite（messages/events）+ 通知 SSE 订阅者
 ```
+
+## 事件流（SSE）
+
+```
+浏览器 EventSource
+  → GET /api/events?token=...&since=<last_event_id>
+  → 先回放 since 之后的 backlog，再发 state 快照
+  → session.add_event() 通过 loop.call_soon_threadsafe 推给每个订阅队列
+  → 每条 log 事件后跟一条 state（status/history/last_event_id）
+  → 15s 空闲发注释心跳；断线由 EventSource 自动重连（Last-Event-ID）
+```
+
+## 持久化
+
+`state/agent.db`（SQLite，WAL）包含：
+
+| 表 | 内容 |
+|---|---|
+| `sessions` | `conv_id` / status / task / task_state / 时间戳 |
+| `messages` | 每个会话的完整消息（内存只保留 `AGENT_WINDOW_SIZE` 条） |
+| `events` | 每个会话的事件（内存只保留最近 500 条） |
+| `plans` | 计划快照，Phase 2 使用 |
+| `meta` | schema 版本与一次性迁移标记 |
+
+`state/session.json` 不再写入；启动时自动迁移一次（`meta.json_migrated` 防重复），
+也可手动执行 `python -m app.migrate`。迁移不删除原文件，便于回滚核对。
 
 ## 依赖规则
 

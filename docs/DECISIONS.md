@@ -50,3 +50,17 @@
 - **背景**：项目会持续变大，跨会话容易丢失上下文。
 - **决定**：`AGENTS.md` 作为唯一入口，`docs/STATUS.md` 作为唯一现状真源，`docs/JOURNAL.md` 记录每次会话，`docs/DECISIONS.md` 记录决策；CLI `app.cli status/handoff` 输出机器可读现状。
 - **后果**：每次会话结束必须更新文档；文档过期视为缺陷。
+
+## ADR-008 — SQLite 作为持久层，session 保留为热状态
+
+- **日期**：2026-10-21
+- **背景**：`state/session.json` 全量重写，事件/历史增长后写放大明显；Phase 1 需要可恢复的会话、消息、事件与计划。
+- **决定**：`app/storage.py` 负责 SQLite（WAL）表 `sessions/messages/events/plans/meta`；`app/session.py` 继续保存内存工作窗口与事件环，但 `add_event`/`add_message` 立即落库，`Store` 对插件保持稳定 API。
+- **后果**：热路径不查库；崩溃后可从 SQLite 恢复最近窗口与事件。历史消息全量保留，内存窗口仍受 `AGENT_WINDOW_SIZE` 限制。`state/session.json` 只读迁移，不再写入。
+
+## ADR-009 — SSE 使用 EventSource，token 允许查询参数
+
+- **日期**：2026-10-21
+- **背景**：前端每秒轮询 `/api/state`，延迟高、请求多；`EventSource` 不能设置 `Authorization` 头。
+- **决定**：新增 `GET /api/events`，支持 `Authorization` 或 `?token=`；服务端通过每连接 `asyncio.Queue` 推送 `log`/`state` 事件，支持 `Last-Event-ID` 重连与 15s 心跳。HTTP 路由保持不变，前端用 EventSource 替代 `setInterval`。
+- **后果**：token 可能出现在访问日志中，仅适用于当前单用户、可信托管环境；未来可换短时票据或同源 Cookie。SSE 只读，写操作仍走 POST。

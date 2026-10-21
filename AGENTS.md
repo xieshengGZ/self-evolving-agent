@@ -13,7 +13,7 @@
 
 ## 现在在哪
 
-- 当前阶段：**Phase 0 + Phase 1 骨架**（稳定内核 + 插件热插拔）
+- 当前阶段：**Phase 0 + Phase 1 完成**（稳定内核 + 插件热插拔 + SSE + SQLite）
 - 现状唯一真源：`docs/STATUS.md`
 - 路线图：`docs/ROADMAP.md`
 - 架构：`docs/ARCHITECTURE.md`
@@ -28,6 +28,7 @@
 .venv/bin/python -m app.cli status     # 项目/服务/插件/下一步
 .venv/bin/python -m app.cli map        # 插件与工具地图
 .venv/bin/python -m app.cli reload hello
+.venv/bin/python -m app.migrate        # session.json -> SQLite（一次性）
 make check                             # test + compileall
 ```
 
@@ -46,9 +47,13 @@ app/kernel/            # 稳定内核，不 import 任何插件
   registry.py          # tools / hooks / http / planners / context 注册表
   plugins.py           # 发现、加载、卸载、原子热替换
   runtime.py           # 单例运行时：store + bus + plugins
-  store.py             # 存储 seam（当前委托 session，后续换 SQLite）
+  store.py             # 插件可见的存储 API（session 热数据 + SQLite 查询）
   loop.py              # agent 主循环
   http.py              # /api/plugins* 与 /api/plugin/{name}/{op}
+  sse.py               # /api/events 事件流
+app/storage.py         # SQLite：sessions/messages/events/plans
+app/session.py         # 内存热状态 + SQLite 持久化
+state/agent.db         # 运行时数据库（不入库）
 plugins/
   tools_basic/         # shell / read / write / self_restart / 符号工具
   hello/               # 热加载演示插件

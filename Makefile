@@ -1,6 +1,6 @@
 PY := .venv/bin/python
 
-.PHONY: test compile check status map handoff run reload
+.PHONY: test compile check status map handoff migrate run reload
 
 test:
 	$(PY) -m pytest -q
@@ -18,6 +18,9 @@ map:
 
 handoff:
 	$(PY) -m app.cli handoff
+
+migrate:
+	$(PY) -m app.migrate
 
 reload:
 	$(PY) -m app.cli reload $(PLUGIN)

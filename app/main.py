@@ -3,12 +3,13 @@ import threading
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from app import actions, classifier, config, deepseek, selfupdate, session
 from app.kernel import get_runtime
 from app.kernel.http import register_plugin_routes
 from app.kernel.loop import agent_loop, load_system_prompt
+from app.kernel.sse import sse_response
 
 app = FastAPI(title="agent-services")
 
@@ -35,20 +36,55 @@ def require_token(authorization: Optional[str] = Header(default=None)) -> None:
         raise HTTPException(status_code=401, detail="unauthorized")
 
 
+def require_stream_token(
+    authorization: Optional[str] = Header(default=None),
+    token: str = "",
+) -> None:
+    """EventSource 不能设置 Authorization 头，因此额外接受 ?token=。"""
+    supplied = _extract_bearer(authorization) or (token or "").strip()
+    if not supplied or supplied != config.AGENT_WEB_TOKEN:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
+@app.get("/api/events", dependencies=[Depends(require_stream_token)])
+async def api_events(
+    request: Request,
+    since: int = 0,
+    last_event_id: Optional[str] = Header(default=None, alias="Last-Event-ID"),
+) -> StreamingResponse:
+    value = since
+    if last_event_id:
+        try:
+            value = int(last_event_id)
+        except (TypeError, ValueError):
+            pass
+    return sse_response(request, since=value)
+
+
 @app.get("/api/state", dependencies=[Depends(require_token)])
-def api_state(since: int = 0) -> JSONResponse:
-    events = session.get_events(since=since)
+def api_state(since: int = 0, since_id: Optional[int] = None) -> JSONResponse:
+    if since_id is not None:
+        events = [
+            event
+            for event in session.get_events()
+            if int(event.get("id") or 0) > int(since_id)
+        ]
+    else:
+        events = session.get_events(since=since)
     return JSONResponse(
         {
             "status": session.get_status(),
             "history": session.get_history(),
             "events": events,
             "event_count": session.event_count(),
+            "last_event_id": session.last_event_id(),
+            "conv_id": session.get_conv_id(),
+            "task": session.get_task(),
         }
     )
 

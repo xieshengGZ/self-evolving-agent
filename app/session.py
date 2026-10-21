@@ -1,11 +1,11 @@
+import asyncio
 import json
 import os
 import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from app import config
-from app import memory
+from app import config, memory, storage as storage_mod
 
 STATE_DIR = os.path.join(config.AGENT_ROOT, "state")
 SESSION_FILE = os.path.join(STATE_DIR, "session.json")
@@ -18,7 +18,11 @@ RESULT_MAX_CHARS = int(os.environ.get("AGENT_RESULT_MAX_CHARS", "1500"))
 
 
 class Session:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        storage_backend: Optional[storage_mod.Storage] = None,
+        auto_migrate: Optional[bool] = None,
+    ) -> None:
         self.history: List[Dict[str, str]] = []  # 工作窗口
         self.events: List[Dict[str, Any]] = []
         self.status: str = "idle"
@@ -28,14 +32,109 @@ class Session:
         self.task: str = ""
         self.task_state: Dict[str, Any] = {}
         self.lock = threading.RLock()
+        self.event_cond = threading.Condition(self.lock)
+        self.event_seq: int = 0
+        self._event_subscribers: List[Any] = []
+        self.storage = storage_backend or storage_mod.Storage()
+        self._auto_migrate = (storage_backend is None) if auto_migrate is None else auto_migrate
+        try:
+            self.storage.init()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _ensure_session(self) -> None:
+        if self.conv_id:
+            return
+        with self.lock:
+            if self.conv_id:
+                return
+            self.conv_id = memory.new_conv_id()
+            conv_id = self.conv_id
+        try:
+            self.storage.create_session(conv_id, title=self.task[:120])
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            memory.ensure(conv_id, title=self.task[:120])
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _save_session(self) -> None:
+        if not self.conv_id:
+            return
+        with self.lock:
+            conv_id = self.conv_id
+            status = self.status
+            task = self.task
+            task_state = dict(self.task_state)
+        try:
+            self.storage.save_session(
+                conv_id,
+                status=status,
+                task=task,
+                task_state=task_state,
+                title=task[:120],
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     # ---------------- events ----------------
-    def add_event(self, kind: str, message: str, **extra: Any) -> None:
+    def subscribe_events(self, loop: Any) -> "asyncio.Queue[Dict[str, Any]]":
+        queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue(maxsize=500)
         with self.lock:
-            if not isinstance(message, str):
-                message = json.dumps(message, ensure_ascii=False)
+            self._event_subscribers.append((loop, queue))
+        return queue
+
+    def unsubscribe_events(self, queue: "asyncio.Queue[Dict[str, Any]]") -> None:
+        with self.lock:
+            self._event_subscribers = [
+                (loop, item) for loop, item in self._event_subscribers if item is not queue
+            ]
+
+    def _publish_event(self, event: Dict[str, Any]) -> None:
+        with self.lock:
+            subscribers = list(self._event_subscribers)
+        for loop, queue in subscribers:
+            try:
+                loop.call_soon_threadsafe(self._queue_event, queue, event)
+            except Exception:  # noqa: BLE001
+                continue
+
+    @staticmethod
+    def _queue_event(queue: "asyncio.Queue[Dict[str, Any]]", event: Dict[str, Any]) -> None:
+        try:
+            queue.put_nowait(event)
+        except asyncio.QueueFull:
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                pass
+
+    def add_event(self, kind: str, message: str, **extra: Any) -> None:
+        if not isinstance(message, str):
+            message = json.dumps(message, ensure_ascii=False)
+        self._ensure_session()
+        ts = time.time()
+        event_id = 0
+        try:
+            event_id = self.storage.append_event(
+                self.conv_id, kind, message, extra=extra, ts=ts
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        with self.event_cond:
+            if event_id:
+                self.event_seq = max(self.event_seq, event_id)
+            else:
+                self.event_seq += 1
+                event_id = self.event_seq
             event: Dict[str, Any] = {
-                "ts": time.time(),
+                "id": event_id,
+                "ts": ts,
                 "kind": kind,
                 "message": message,
             }
@@ -45,11 +144,21 @@ class Session:
             # events 只保留最近 500 条，避免无限增长
             if len(self.events) > 500:
                 self.events = self.events[-500:]
+            self.event_cond.notify_all()
+        self._publish_event(event)
 
     # ---------------- window ----------------
+    def append_history(self, role: str, content: Any) -> None:
+        self.add_message(role, content)
+
     def add_message(self, role: str, content: Any) -> None:
         if not isinstance(content, str):
             content = json.dumps(content, ensure_ascii=False)
+        self._ensure_session()
+        try:
+            self.storage.append_message(self.conv_id, role, content)
+        except Exception:  # noqa: BLE001
+            pass
         if len(content) > RESULT_MAX_CHARS:
             content = content[:RESULT_MAX_CHARS] + "…（已截断）"
         with self.lock:
@@ -61,33 +170,62 @@ class Session:
         with self.lock:
             self.history = []
 
+    def clear_events(self) -> None:
+        with self.event_cond:
+            self.events = []
+            self.event_cond.notify_all()
+        try:
+            self.storage.clear_events(self.conv_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def wait_events(self, last_id: int = 0, timeout: float = 15.0) -> List[Dict[str, Any]]:
+        deadline = time.time() + max(0.1, float(timeout))
+        with self.event_cond:
+            while True:
+                fresh = [
+                    event
+                    for event in self.events
+                    if int(event.get("id") or 0) > int(last_id)
+                ]
+                if fresh:
+                    return fresh
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    return []
+                self.event_cond.wait(remaining)
+
+    def last_event_id(self) -> int:
+        with self.lock:
+            return int(self.events[-1].get("id") or 0) if self.events else 0
+
     def set_task(self, task: str) -> None:
         with self.lock:
             self.task = task or ""
+        self._save_session()
+
+    def set_task_state(self, state: Dict[str, Any]) -> None:
+        with self.lock:
+            self.task_state = dict(state or {})
+        self._save_session()
 
     def new_conversation(self, task: str) -> str:
-        """归档旧窗口，开新对话，返回新 conv_id。"""
+        """开新对话；旧消息已落在 SQLite，这里只切换当前会话。"""
         with self.lock:
-            old = list(self.history)
-            old_conv = self.conv_id
             self.history = []
             self.task = task or ""
             self.task_state = {}
             self.conv_id = memory.new_conv_id()
-        if old:
-            try:
-                os.makedirs(ARCHIVE_DIR, exist_ok=True)
-                ts = str(int(time.time()))
-                path = os.path.join(ARCHIVE_DIR, (old_conv or "unknown") + "-" + ts + ".json")
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump({"conv_id": old_conv, "history": old}, f, ensure_ascii=False, indent=2)
-            except Exception:
-                pass
+            conv_id = self.conv_id
         try:
-            memory.ensure(self.conv_id, title=(task or "")[:120])
-        except Exception:
+            self.storage.create_session(conv_id, title=(task or "")[:120])
+        except Exception:  # noqa: BLE001
             pass
-        return self.conv_id
+        try:
+            memory.ensure(conv_id, title=(task or "")[:120])
+        except Exception:  # noqa: BLE001
+            pass
+        return conv_id
 
     # ---------------- messages ----------------
     def build_messages(self, system_prompt: str) -> List[Dict[str, str]]:
@@ -118,6 +256,7 @@ class Session:
     def set_status(self, status: str) -> None:
         with self.lock:
             self.status = status
+        self._save_session()
 
     def request_cancel(self) -> None:
         with self.lock:
@@ -149,6 +288,7 @@ class Session:
                 "history": list(self.history),
                 "events": list(events),
                 "event_count": len(self.events),
+                "last_event_id": self.events[-1].get("id", 0) if self.events else 0,
                 "conv_id": self.conv_id,
                 "task": self.task,
             }
@@ -165,27 +305,20 @@ class Session:
             }
 
     def persist(self) -> None:
-        try:
-            os.makedirs(STATE_DIR, exist_ok=True)
-            data = self.to_dict()
-            tmp = SESSION_FILE + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, SESSION_FILE)
-        except Exception:
-            pass
+        self._save_session()
 
-    def load(self) -> None:
+    def _load_legacy_json(self) -> bool:
         if not os.path.exists(SESSION_FILE):
-            return
+            return False
         try:
             with open(SESSION_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        except Exception:
-            return
+        except Exception:  # noqa: BLE001
+            return False
+        if not isinstance(data, dict):
+            return False
         with self.lock:
             hist = data.get("history", []) or []
-            # 迁移：旧版本可能存了全量 history，这里只保留最近窗口
             if len(hist) > WINDOW_SIZE:
                 try:
                     os.makedirs(ARCHIVE_DIR, exist_ok=True)
@@ -193,27 +326,63 @@ class Session:
                     path = os.path.join(ARCHIVE_DIR, "legacy-" + ts + ".json")
                     with open(path, "w", encoding="utf-8") as f:
                         json.dump({"history": hist}, f, ensure_ascii=False, indent=2)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
                 hist = hist[-WINDOW_SIZE:]
             self.history = hist
             self.events = (data.get("events", []) or [])[-500:]
             self.conv_id = data.get("conv_id", "") or ""
             self.task = data.get("task", "") or ""
-            _ts_state = data.get("task_state", {})
-            self.task_state = _ts_state if isinstance(_ts_state, dict) else {}
-            status = data.get("status", "idle")
-            if status == "running":
-                self.status = "idle"
-                self.events.append(
-                    {
-                        "ts": time.time(),
-                        "kind": "system",
-                        "message": "上次运行被中断",
-                    }
+            state = data.get("task_state", {})
+            self.task_state = state if isinstance(state, dict) else {}
+            self.event_seq = max(
+                [int(ev.get("id") or 0) for ev in self.events if isinstance(ev, dict)] + [0]
+            )
+            self.status = str(data.get("status") or "idle")
+        return True
+
+    def load(self) -> None:
+        if self._auto_migrate:
+            try:
+                self.storage.migrate_json()
+            except Exception:  # noqa: BLE001
+                pass
+
+        data = None
+        try:
+            data = self.storage.load_current(window=WINDOW_SIZE, event_limit=500)
+        except Exception:  # noqa: BLE001
+            data = None
+
+        interrupted = False
+        if data is not None:
+            with self.lock:
+                self.history = data["history"]
+                self.events = data["events"]
+                self.conv_id = data["conv_id"]
+                self.task = data["task"]
+                self.task_state = data["task_state"]
+                self.event_seq = max(
+                    [int(ev.get("id") or 0) for ev in self.events if isinstance(ev, dict)] + [0]
                 )
-            else:
-                self.status = status if status in ("idle", "running") else "idle"
+                status = str(data.get("status") or "idle")
+                interrupted = status == "running"
+                self.status = "idle" if interrupted else (
+                    status if status in ("idle", "running") else "idle"
+                )
+        else:
+            if not self._load_legacy_json():
+                self._ensure_session()
+            with self.lock:
+                interrupted = self.status == "running"
+                if interrupted:
+                    self.status = "idle"
+            self.persist()
+
+        if interrupted:
+            self.add_event("system", "上次运行被中断")
+            self.set_status("idle")
+            self.persist()
 
 
 # ---------------------------------------------------------------------------
@@ -252,8 +421,7 @@ def get_history() -> List[Dict[str, str]]:
 
 
 def clear_events() -> None:
-    with _default.lock:
-        _default.events = []
+    _default.clear_events()
 
 
 def get_events(since: int = 0) -> List[Dict[str, Any]]:
@@ -311,8 +479,24 @@ def get_task_state() -> Dict[str, Any]:
 
 
 def set_task_state(state: Dict[str, Any]) -> None:
-    with _default.lock:
-        _default.task_state = dict(state or {})
+    _default.set_task_state(state)
+
+
+def subscribe_events(loop: Any) -> "asyncio.Queue[Dict[str, Any]]":
+    return _default.subscribe_events(loop)
+
+
+def unsubscribe_events(queue: "asyncio.Queue[Dict[str, Any]]") -> None:
+    _default.unsubscribe_events(queue)
+
+
+def wait_events(last_id: int = 0, timeout: float = 15.0) -> List[Dict[str, Any]]:
+    """阻塞等待 id > last_id 的事件；超时返回空列表。"""
+    return _default.wait_events(last_id, timeout)
+
+
+def last_event_id() -> int:
+    return _default.last_event_id()
 
 
 def build_context_preview(system_prompt: str) -> Dict[str, Any]:

@@ -58,7 +58,7 @@ def teardown(ctx: PluginContext) -> None:      # 可选
 | `ctx.http` | `HttpRegistry` | 注册 `/api/plugin/{name}/{op}` 处理器 |
 | `ctx.planners` | `PlannerRegistry` | 注册任务规划器（Phase 2） |
 | `ctx.context` | `ContextRegistry` | 注册上下文构建器（Phase 3） |
-| `ctx.store` | `Store` | 读写会话/事件/状态 |
+| `ctx.store` | `Store` | 读写会话/事件/状态，查询 SQLite |
 | `ctx.bus` | `EventBus` | 进程内事件 |
 | `ctx.llm` | module | `app.deepseek`，惰性导入 |
 
@@ -103,6 +103,38 @@ Content-Type: application/json
 - 只支持 POST；payload 必须是 JSON 对象或空。
 - 返回 dict 时原样返回；其他类型包装为 `{"ok": true, "result": ...}`。
 - 不要注册任意路径；固定入口是为了让热替换不触碰 FastAPI 路由表。
+
+## Store（SQLite）
+
+`Store` 的实时读写仍走 `app.session` 的内存窗口；持久化由 `app.storage.Storage` 落到
+`state/agent.db`（WAL）。插件常用的方法：
+
+| 方法 | 说明 |
+|---|---|
+| `add_event(kind, message, **extra)` | 追加事件，立即写入 SQLite |
+| `get_events(since=0)` / `last_event_id()` | 读取内存窗口事件 / 最新事件 id |
+| `wait_events(last_id, timeout)` | 阻塞等待新事件（同步调用） |
+| `append_history(role, content)` / `get_history()` | 当前窗口消息 |
+| `get_status()` / `set_status()` | 运行状态 |
+| `get_conv_id()` / `new_conversation(task)` | 会话切换 |
+| `get_task()` / `set_task()` / `get_task_state()` / `set_task_state()` | 任务与计划状态 |
+| `list_sessions(limit=50)` | 最近会话（SQLite） |
+| `save_plan(conv_id, goal, steps, status)` / `get_plans(conv_id)` | 计划持久化（Phase 2 使用） |
+| `db_path()` | 当前数据库路径 |
+
+约定：`add_event` / `append_history` 立即持久化；`set_status` / `set_task` /
+`set_task_state` 会同步会话元数据；`persist()` 仍可显式刷一次。
+
+## HTTP 事件流（SSE）
+
+```
+GET /api/events?token=<AGENT_WEB_TOKEN>&since=<last_event_id>
+```
+
+- `Authorization: Bearer <token>` 也可用；`EventSource` 不能设置请求头，所以额外接受 `token` 查询参数。
+- 服务端事件：`log`（带 `id`，数据为事件对象）、`state`（status/history/last_event_id/conv_id/task）。
+- 浏览器重连时自动带 `Last-Event-ID`，优先于 `since`。
+- 连接空闲时每 15 秒发送注释心跳；服务端不会为每个客户端创建轮询定时器。
 
 ## 钩子
 

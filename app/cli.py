@@ -5,25 +5,14 @@ replaying chat history.
 """
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import List
 
+from app.env import load_dotenv as _load_dotenv
+
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def _load_dotenv() -> None:
-    env_path = ROOT / ".env"
-    if not env_path.is_file():
-        return
-    for raw in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
 def _git_sha() -> str:
@@ -95,7 +84,8 @@ def _print_plugins(runtime) -> None:
 
 def cmd_status() -> int:
     _load_dotenv()
-    from app import config, session
+    from app import config
+    from app.storage import Storage
 
     runtime = _runtime()
     print(f"project : {ROOT}")
@@ -106,9 +96,20 @@ def cmd_status() -> int:
     _print_plugins(runtime)
     print(f"tools   : {', '.join(runtime.plugins.tool_names()) or '-'}")
 
-    session.load()
-    print(f"session : status={session.get_status()} conv={session.get_conv_id() or '-'}")
-    print(f"task    : {session.get_task() or '-'}")
+    db = Storage()
+    print(f"db      : {db.path}")
+    data = None
+    if db.path.exists():
+        try:
+            data = db.load_current()
+        except Exception:  # noqa: BLE001
+            data = None
+    if data:
+        print(f"session : status={data['status']} conv={data['conv_id'] or '-'}")
+        print(f"task    : {data['task'] or '-'}")
+        print(f"rows    : {db.totals()}")
+    else:
+        print("session : empty (run: python -m app.migrate)")
 
     next_lines = _section(ROOT / "docs" / "STATUS.md", "下一步")
     if next_lines:
@@ -131,12 +132,19 @@ def cmd_map() -> int:
 
 def cmd_handoff() -> int:
     _load_dotenv()
-    from app import config, session
+    from app import config
+    from app.storage import Storage
 
     cmd_status()
     print("recent  :")
-    session.load()
-    for event in session.get_events()[-5:]:
+    db = Storage()
+    events = []
+    if db.path.exists():
+        try:
+            events = (db.load_current() or {}).get("events", [])
+        except Exception:  # noqa: BLE001
+            events = []
+    for event in events[-5:]:
         message = config.redact(str(event.get("message", "")))
         print(f"  [{event.get('kind')}] {message[:160]}")
     print("read    : AGENTS.md -> docs/STATUS.md -> docs/ARCHITECTURE.md")
@@ -158,6 +166,22 @@ def cmd_reload(name: str) -> int:
     return 0
 
 
+def cmd_migrate() -> int:
+    _load_dotenv()
+    from app import config
+    from app.storage import Storage
+
+    config.ensure_dirs()
+    storage = Storage()
+    result = storage.migrate_json()
+    print(f"migrated : {result.get('migrated')}")
+    print(f"source   : {result.get('source')}")
+    if result.get("reason"):
+        print(f"reason   : {result['reason']}")
+    print(f"rows     : {storage.totals()}")
+    return 0
+
+
 def main(argv: List[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] == "status":
@@ -166,9 +190,14 @@ def main(argv: List[str] | None = None) -> int:
         return cmd_map()
     if args[0] == "handoff":
         return cmd_handoff()
+    if args[0] == "migrate":
+        return cmd_migrate()
     if args[0] == "reload" and len(args) == 2:
         return cmd_reload(args[1])
-    print("usage: python -m app.cli [status|map|handoff|reload <plugin>]", file=sys.stderr)
+    print(
+        "usage: python -m app.cli [status|map|handoff|migrate|reload <plugin>]",
+        file=sys.stderr,
+    )
     return 2
 
 

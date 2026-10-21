@@ -14,8 +14,9 @@
 - 插件系统：`plugins/<name>/{plugin.json,plugin.py,README.md}`，新工具/HTTP op 热加载不重启
 - 规划与上下文预留 `planners` / `context` 注册表，Phase 2/3 插件化
 - HTTP：`/api/plugins`、`/api/plugins/{name}/reload`、`/api/plugin/{name}/{op}`
+- 实时事件：`GET /api/events`（SSE），前端已从轮询切换为 EventSource
 - 提示词外置：`prompts/system.md`，每轮热加载
-- 会话状态：`state/session.json`（后续迁 SQLite，`app/kernel/store.py` 是 seam）
+- 会话状态：SQLite `state/agent.db`（sessions/messages/events/plans）；旧 `session.json` 自动迁移一次
 - 自更新：`self_restart` → 备份 → 语法校验 → `os.execv` 重启，失败自动回滚
 - 手动救援：`/manual` 页面，可执行命令、看崩溃日志、手动重启
 
@@ -27,6 +28,7 @@ make check                    # compileall + pytest
 .venv/bin/python -m app.cli status
 .venv/bin/python -m app.cli map
 .venv/bin/python -m app.cli reload hello
+.venv/bin/python -m app.migrate        # 手动迁移旧 session.json
 ```
 
 ## 快速开始

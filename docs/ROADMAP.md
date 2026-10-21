@@ -10,7 +10,7 @@
 - [x] pytest 冒烟测试
 - [x] 记录当前架构与决策
 
-## Phase 1 — 内核 + 热插拔（骨架已完成，待完整化）
+## Phase 1 — 内核 + 热插拔（已完成）
 
 - [x] `app/kernel/` 模块拆分
 - [x] 插件契约 + `plugin.json` + 加载器
@@ -19,10 +19,10 @@
 - [x] `tools_basic` 迁移为插件
 - [x] `hello` 演示插件
 - [x] agent loop 抽离到 `app/kernel/loop.py`
-- [ ] 事件流 SSE 替代前端轮询
-- [ ] `store` 迁移 SQLite（sessions/messages/events/plans）
-- [ ] 旧的 `state/session.json` 一次性迁移脚本
-- [ ] 插件自动监听（`AGENT_PLUGIN_AUTORELOAD` 已留开关）
+- [x] 事件流 SSE 替代前端轮询
+- [x] `store` 迁移 SQLite（sessions/messages/events/plans）
+- [x] 旧的 `state/session.json` 一次性迁移脚本（`app.migrate`）
+- [x] 插件自动监听（`AGENT_PLUGIN_AUTORELOAD` 已留开关）
 
 ## Phase 2 — 任务规划插件
 

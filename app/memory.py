@@ -36,6 +36,7 @@
 import os
 import re
 import time
+import uuid
 from typing import Dict, List, Optional
 
 from app import config
@@ -72,7 +73,7 @@ def path_for(conv_id: str) -> str:
 
 
 def new_conv_id() -> str:
-    return time.strftime("%Y%m%d-%H%M%S")
+    return time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
 
 
 def _now() -> str:

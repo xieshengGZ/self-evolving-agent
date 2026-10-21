@@ -33,3 +33,32 @@
 
 - Phase 1 完整化：SSE 事件流 + SQLite 存储。
 - Phase 2：规划插件。
+
+## 2026-10-21 — Phase 1 完整化（SSE + SQLite）
+
+**改了什么**
+
+- 新增 `app/storage.py`：SQLite（WAL）`sessions/messages/events/plans/meta`，一次性迁移 `state/session.json`。
+- `app/session.py` 保留内存工作窗口，`add_event`/`add_message` 即时落库；新增事件订阅队列，支持 SSE 跨线程推送。
+- 新增 `app/kernel/sse.py` 与 `GET /api/events`：backlog、`log`/`state` 事件、`Last-Event-ID`、15s 心跳、token 查询参数。
+- 前端 `index.html` 从 `setInterval` 轮询改为 `EventSource`；`/api/state` 新增 `since_id` 兼容增量读取。
+- 新增 `app/migrate.py`、`app.cli migrate`、`make migrate`；`app.cli status` 改为只读数据库。
+- `Store` 增加 `list_sessions` / `save_plan` / `get_plans` / `wait_events` / `db_path`。
+- 修复 `memory.new_conv_id()` 同秒内重复的问题（随机后缀）。
+
+**为什么**
+
+- 轮询延迟高且每秒产生请求；SSE 让事件、状态、历史增量实时到达。
+- 单文件 JSON 全量重写会随历史增长放大；SQLite 支持按会话保留完整消息与计划，为 Phase 2 恢复打底。
+
+**验证**
+
+- `pytest` 26 passed；`compileall` 通过。
+- 用真实 `state/session.json` 副本迁移：36 messages / 76 events / 1 plan，二次迁移自动 no-op。
+- SSE：初始 backlog + state、跨线程事件推送、token 鉴权测试通过。
+- `app.cli status` 只读会话/事件，不触发迁移或状态写入。
+
+**下一步**
+
+- Phase 2：`planning` 插件与状态机。
+- 部署：确认线上停服窗口后启动 `agent-services`，检查 `state/agent.db` 与 `/api/events`。

@@ -381,15 +381,13 @@
   "use strict";
 
   var TOKEN_KEY = "agent_web_token";
-  var POLL_MS = 1000;
   var COLLAPSE_CHARS = 1200;
 
   var state = {
     status: "unknown",
     history: [],
-    eventsSince: 0,
-    polling: false,
-    timer: null,
+    lastEventId: 0,
+    source: null,
     lastError: null,
     expanded: {},  // 记录用户手动展开的消息索引
     memConv: null
@@ -424,6 +422,7 @@
   function saveToken() {
     try { localStorage.setItem(TOKEN_KEY, getToken()); } catch (e) {}
     setHint("Token 已保存");
+    connectEvents();
   }
 
   function authHeaders(extra) {
@@ -625,6 +624,9 @@
     var frag = document.createDocumentFragment();
     for (var i = 0; i < newEvents.length; i++) {
       var ev = newEvents[i] || {};
+      var evId = Number(ev.id || 0);
+      if (evId && evId <= state.lastEventId) continue;
+      if (evId > state.lastEventId) state.lastEventId = evId;
       var div = document.createElement("div");
       div.className = "event";
       var ts = document.createElement("span");
@@ -647,10 +649,22 @@
     if (atBottom) box.scrollTop = box.scrollHeight;
   }
 
+  function applyState(data) {
+    if (!data) return;
+    state.lastError = null;
+    renderStatus(data.status);
+    if (Array.isArray(data.history)) {
+      var changed = JSON.stringify(data.history) !== JSON.stringify(state.history);
+      state.history = data.history;
+      if (changed) renderHistory();
+    }
+    if (typeof data.last_event_id === "number" && data.last_event_id > state.lastEventId) {
+      state.lastEventId = data.last_event_id;
+    }
+  }
+
   function fetchState() {
-    if (state.polling) return;
-    state.polling = true;
-    var url = "/api/state?since=" + encodeURIComponent(state.eventsSince);
+    var url = "/api/state?since_id=" + encodeURIComponent(state.lastEventId);
     fetch(url, { headers: authHeaders() })
       .then(function (resp) {
         if (resp.status === 401 || resp.status === 403) throw new Error("鉴权失败，请检查 Token");
@@ -658,35 +672,42 @@
         return resp.json();
       })
       .then(function (data) {
-        state.lastError = null;
-        renderStatus(data.status);
-        if (Array.isArray(data.history)) {
-          var changed = JSON.stringify(data.history) !== JSON.stringify(state.history);
-          state.history = data.history;
-          if (changed) renderHistory();
-        }
-        if (Array.isArray(data.events)) {
-          appendEvents(data.events);
-          if (typeof data.event_count === "number") {
-            state.eventsSince = data.event_count;
-          } else {
-            state.eventsSince += data.events.length;
-          }
-        }
+        if (Array.isArray(data.events)) appendEvents(data.events);
+        applyState(data);
       })
       .catch(function (err) {
         if (state.lastError !== String(err)) {
           state.lastError = String(err);
           setHint("连接失败: " + err.message, true);
         }
-      })
-      .then(function () { state.polling = false; });
+      });
   }
 
-  function startPolling() {
-    if (state.timer) return;
-    fetchState();
-    state.timer = setInterval(fetchState, POLL_MS);
+  function connectEvents() {
+    if (!getToken()) {
+      if (state.source) { state.source.close(); state.source = null; }
+      setHint("请先填写 Token", true);
+      return;
+    }
+    if (state.source) { state.source.close(); state.source = null; }
+    var url = "/api/events?token=" + encodeURIComponent(getToken()) +
+      "&since=" + encodeURIComponent(state.lastEventId);
+    var es = new EventSource(url);
+    state.source = es;
+    es.addEventListener("state", function (e) {
+      try { applyState(JSON.parse(e.data)); } catch (err) {}
+    });
+    es.addEventListener("log", function (e) {
+      try { appendEvents([JSON.parse(e.data)]); } catch (err) {}
+    });
+    es.onopen = function () { setHint("实时连接已建立"); };
+    es.onerror = function () {
+      if (es.readyState === EventSource.CLOSED) {
+        setHint("实时连接已关闭，请检查 Token", true);
+      } else {
+        setHint("实时连接中断，正在重连…", true);
+      }
+    };
   }
 
   function postJSON(path, body) {
@@ -876,14 +897,15 @@
   }
 
   function doClear() {
-    if (!confirm("确认清空当前对话历史？旧窗口会归档到 state/archive。")) return;
+    if (!confirm("确认清空当前对话历史？旧消息仍保留在 SQLite 中。")) return;
     postJSON("/api/clear", {})
       .then(function () {
         state.history = [];
-        state.eventsSince = 0;
+        state.lastEventId = 0;
+        el.events.innerHTML = "";
         renderHistory();
         setHint("历史已清空");
-        fetchState();
+        connectEvents();
       })
       .catch(function (err) { setHint("清空失败: " + err.message, true); });
   }
@@ -912,7 +934,7 @@
       }
     });
     el.token.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") { e.preventDefault(); saveToken(); fetchState(); }
+      if (e.key === "Enter") { e.preventDefault(); saveToken(); }
     });
   }
 
@@ -920,7 +942,7 @@
     loadToken();
     bind();
     renderStatus("unknown");
-    startPolling();
+    connectEvents();
   }
 
   if (document.readyState === "loading") {
