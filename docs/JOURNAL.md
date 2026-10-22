@@ -165,3 +165,22 @@
 **注意**
 
 - 线上重启后回归：原句与“什么时候…”均返回 `mode=chat`，计划 id 未变化，无新 plan 事件；8 插件无加载错误。
+
+## 2026-10-22 — 发布 v1.2.0
+
+**做了什么**
+
+- 根目录新增 `VERSION=1.2.0`，`app/version.py` 解析主/次/补丁号并按 MINOR 奇偶推导 `stable/development`。
+- `app/__init__.py` 暴露 `__version__`；FastAPI、`/api/version`、`/api/state.version`、`app.cli status` 均可读取版本。
+- 新增 `docs/VERSIONING.md`：主版本阶段、单数开发/偶数稳定、补丁为功能更新，以及发布流程。
+- 记录 ADR-013；更新 README、AGENTS、STATUS。
+- 发布线：`v1.2.0` stable；下一开发线 `v2.1.0`。
+
+**验证**
+
+- `make check`：**56 passed**，`compileall` 通过。
+- 版本单测覆盖 `VERSION`、奇偶通道、`/api/version` 和 `/api/state.version`。
+
+**下一步**
+
+- 以 `v2.1.0` 开始 Phase 4：类型化特权操作、审批/审计、快照/回滚。

@@ -85,3 +85,10 @@
 - **背景**：`session.build_messages()` 硬编码 system/memory/task/plan/history，无法按 token 预算裁剪，也无法热替换记忆/历史策略；工具大结果虽然截断，但仍会挤占窗口。
 - **决定**：`app/context.py` 定义 Section 模型、token 估算、预算排序/截断/丢弃和 artifact 卸载；`context_base/context_plan/context_memory/context_window` 通过 `ctx.context` 注册 section builder。内核按 `order` 渲染、按 `priority` 保留；超预算时先调用可选的 `context.compress` 钩子，否则确定性压缩。`session.build_messages()` 仅作 fallback。
 - **后果**：上下文策略可单独热替换；预算和顺序由内核统一保证。token 估算是启发式（非 tokenizer 精确值），压缩模型后端尚未内置，当前以确定性裁剪 + hook 扩展点为主；artifacts 需要后续定期清理策略。
+
+## ADR-013 — 版本号编码开发/稳定状态
+
+- **日期**：2026-10-22
+- **背景**：项目进入可发布阶段，需要让人和 Agent 只读版本号就能判断当前是开发线还是稳定版，并明确下一阶段从哪个版本继续。
+- **决定**：采用 `MAJOR.MINOR.PATCH`：主版本号标识阶段；`MINOR` 单数为开发中、偶数为稳定版；`PATCH` 表示同一稳定阶段内的功能更新。当前冻结为 `v1.2.0`，后续开发从 `v2.1.0` 开始。版本唯一来源是根目录 `VERSION`，由 `app/version.py` 读取并通过 `/api/version`、`/api/state.version` 和 CLI 暴露。
+- **后果**：即使不读提交历史，也能从版本号判断成熟度；稳定版发布必须通过测试和线上回归，并打带注释 Git 标签。新增版本相关说明维护在 `docs/VERSIONING.md`。

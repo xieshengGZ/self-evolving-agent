@@ -13,8 +13,10 @@
 
 ## 现在在哪
 
-- 当前阶段：**Phase 0 + 1 + 2 + 3 完成**（稳定内核 + 热插拔 + SSE/SQLite + 规划 + 上下文预算/artifact）
+- 当前版本：**v1.2.0（stable）**；下一开发线：**v2.1.0**
+- 当前阶段：**Phase 0 + 1 + 2 + 3 + P0 完成**（稳定内核 + 热插拔 + SSE/SQLite + 规划 + 上下文预算/artifact）
 - 现状唯一真源：`docs/STATUS.md`
+- 版本规则：`docs/VERSIONING.md`
 - 路线图：`docs/ROADMAP.md`
 - 架构：`docs/ARCHITECTURE.md`
 - 插件契约：`docs/CONTRACTS.md`

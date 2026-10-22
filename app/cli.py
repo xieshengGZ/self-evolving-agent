@@ -86,9 +86,11 @@ def cmd_status() -> int:
     _load_dotenv()
     from app import config
     from app.storage import Storage
+    from app.version import CHANNEL, VERSION
 
     runtime = _runtime()
     print(f"project : {ROOT}")
+    print(f"version : v{VERSION} ({CHANNEL})")
     print(f"git     : {_git_sha()}")
     print(f"service : {_service_state()}")
     print(f"root    : {config.AGENT_ROOT}")

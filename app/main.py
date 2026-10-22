@@ -10,8 +10,9 @@ from app.kernel import get_runtime
 from app.kernel.http import register_plugin_routes
 from app.kernel.loop import agent_loop, load_system_prompt
 from app.kernel.sse import sse_response
+from app.version import CHANNEL, VERSION
 
-app = FastAPI(title="agent-services")
+app = FastAPI(title="agent-services", version=VERSION)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
@@ -51,6 +52,11 @@ def index() -> FileResponse:
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
+@app.get("/api/version")
+def api_version() -> JSONResponse:
+    return JSONResponse({"name": "agent-services", "version": VERSION, "channel": CHANNEL})
+
+
 @app.get("/api/events", dependencies=[Depends(require_stream_token)])
 async def api_events(
     request: Request,
@@ -78,6 +84,7 @@ def api_state(since: int = 0, since_id: Optional[int] = None) -> JSONResponse:
         events = session.get_events(since=since)
     return JSONResponse(
         {
+            "version": VERSION,
             "status": session.get_status(),
             "history": session.get_history(),
             "events": events,
