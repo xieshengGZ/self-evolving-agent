@@ -154,12 +154,14 @@
 - 显式动作（`帮我写/创建/查看/分析/修复/部署`）仍归 `task`；插件 hook 若误返回 task，core 会做一次概念问题降级。
 - planning prompt 明确：纯解释/问答不规划；不得发明用户未要求的交付物，acceptance 只验收明确要求或实际产出。
 - loop 在执行前校验 action：缺失/非字符串 action 或未知 action 时，返回定向修复提示（含可用动作和示例），不进入工具/计划记录。
+- chat 模式新增 `deepseek.chat_text()` 返回原始文本，不再复用动作 JSON 解析；修复答案含 JSON 时只保存 JSON 片段的问题。
+- 测试 conftest 强制测试 token，避免 shell 环境污染导致 SSE/control 测试偶发失败。
 
 **验证**
 
-- `make check`：**52 passed**；`compileall` 通过。
-- 新增测试：用户原句/概念问题/“为什么部署失败”归 chat；显式写作仍 task；插件误判 task 时 core 降级；非法/未知 action 后能继续并完成计划。
+- `make check`：**54 passed**；`compileall` 通过。
+- 新增测试：用户原句/概念问题/“为什么部署失败”/“什么时候…”归 chat；显式写作仍 task；插件误判 task 时 core 降级；非法/未知 action 后能继续并完成计划；chat_text 与动作 JSON 分离。
 
 **注意**
 
-- 服务端当前停止，未做线上回归；重启口令：`sudo systemctl start agent-services`。
+- 线上重启后回归：原句与“什么时候…”均返回 `mode=chat`，计划 id 未变化，无新 plan 事件；8 插件无加载错误。

@@ -215,10 +215,8 @@ async def api_chat(request: Request) -> JSONResponse:
         try:
             session.add_event("info", "闲聊模式")
             msgs = context.build(load_system_prompt(), runtime=_runtime)["messages"]
-            reply = deepseek.chat(msgs)
-            if isinstance(reply, dict):
-                reply = reply.get("message") or reply.get("content") or str(reply)
-            session.append_history("assistant", str(reply))
+            reply = deepseek.chat_text(msgs)
+            session.append_history("assistant", reply)
             session.add_event("assistant", str(reply))
         except Exception as e:
             session.add_event("error", f"chat 失败: {e}")

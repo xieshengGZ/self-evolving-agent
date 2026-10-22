@@ -71,8 +71,8 @@ def _redact(text: str) -> str:
     return text
 
 
-def chat(messages: list[dict[str, str]]) -> dict[str, Any]:
-    """调用 DeepSeek chat completions，返回解析后的 JSON 动作字典。"""
+def _complete(messages: list[dict[str, str]]) -> str:
+    """调用 DeepSeek chat completions，返回原始文本并记录用量。"""
     url = config.DEEPSEEK_BASE_URL.rstrip("/") + "/chat/completions"
     headers = {
         "Authorization": f"Bearer {config.DEEPSEEK_API_KEY}",
@@ -116,5 +116,14 @@ def chat(messages: list[dict[str, str]]) -> dict[str, Any]:
 
     if not isinstance(content, str):
         raise DeepSeekError("DeepSeek 返回内容不是字符串")
+    return content
 
-    return _extract_json(content)
+
+def chat_text(messages: list[dict[str, str]]) -> str:
+    """闲聊/解释模式：返回原始文本，不尝试解析 JSON。"""
+    return _complete(messages)
+
+
+def chat(messages: list[dict[str, str]]) -> dict[str, Any]:
+    """动作模式：从回复中提取单个 JSON 动作。"""
+    return _extract_json(_complete(messages))

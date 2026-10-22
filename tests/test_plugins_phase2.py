@@ -49,6 +49,10 @@ def test_classifier_plugin_rules():
     assert hooks.emit("classify.prompt", text="SSE 和 SQLite 有什么区别？") == ["chat"]
     assert hooks.emit("classify.prompt", text="为什么部署失败") == ["chat"]
     assert hooks.emit("classify.prompt", text="git 是什么") == ["chat"]
+    assert hooks.emit(
+        "classify.prompt",
+        text="什么时候会有这么复杂的业务。到时候我使用子agent实现具体的业务流程不就行了吗",
+    ) == ["chat"]
 
 
 def test_classifier_keeps_concept_questions_out_of_task_mode():
@@ -60,6 +64,10 @@ def test_classifier_keeps_concept_questions_out_of_task_mode():
     assert classifier.classify("解释一下 SSE 和 SQLite") == "chat"
     assert classifier.classify("为什么部署失败") == "chat"
     assert classifier.classify("git 是什么") == "chat"
+    assert classifier.classify(
+        "什么时候会有这么复杂的业务。到时候我使用子agent实现具体的业务流程不就行了吗"
+    ) == "chat"
+    assert classifier.classify("能帮我查一下 README 吗") == "task"
     assert classifier.is_explanatory("SSE 是什么") is True
     assert classifier.is_explanatory("帮我写 SSE 文档") is False
     assert classifier.classify("帮我把 SSE 和 SQLite 写成文档") == "task"

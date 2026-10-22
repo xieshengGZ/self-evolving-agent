@@ -5,7 +5,7 @@
 ## 当前阶段
 
 Phase 0 / 1 / 2 / 3 + P0 稳定性完成：稳定内核、插件热插拔、SSE + SQLite、规划状态机、上下文预算与 artifact。
-下一阶段：Phase 4 主机治理（另议）。当前服务端已按用户要求停止。
+下一阶段：Phase 4 主机治理（另议）。当前服务端运行中，P0 已完成线上回归。
 
 ## 上次完成（2026-10-21）
 
@@ -19,8 +19,9 @@ Phase 0 / 1 / 2 / 3 + P0 稳定性完成：稳定内核、插件热插拔、SSE 
 - Phase 3：达到压力阈值触发 `context.compress` hook；无 hook 时超预算确定性压缩
 - `/api/context` 返回 messages、parts 和预算 ledger
 - 配置：`AGENT_CONTEXT_BUDGET` / `AGENT_CONTEXT_PRESSURE` / `AGENT_ARTIFACT_*`
-- P0：classifier 识别概念/解释类问题为 chat，并防止插件误判为 task；显式写/查看/修复仍为 task
+- P0：classifier 识别是什么/为什么/什么时候/区别等概念问题为 chat，并防止插件误判为 task；显式写/查看/修复仍为 task
 - P0：planning prompt 禁止为用户未要求的交付物发明验收；loop 对缺失/未知 action 给定向修复提示
+- P0：chat 模式改用 `chat_text()` 返回原始文本，避免答案中的 JSON 被当作动作；测试统一覆盖环境变量
 
 ## 已知问题
 
@@ -31,7 +32,6 @@ Phase 0 / 1 / 2 / 3 + P0 稳定性完成：稳定内核、插件热插拔、SSE 
 - 意图分类仍是规则 + 插件 hook，不是语义模型；复杂混合请求可能误判
 - 旧会话中已 failed 的计划不会自动清除；需要时调用 planning reset
 - SSE token 走查询参数，可能进入访问日志（单用户环境可接受，ADR-009）
-- `state/session.json` 迁移后保留，确认稳定后可手动归档
 
 ## 下一步（3）
 
@@ -54,7 +54,7 @@ Phase 0 / 1 / 2 / 3 + P0 稳定性完成：稳定内核、插件热插拔、SSE 
 
 ## 最近验证
 
-- 2026-10-21：`make check` **52 passed**；`compileall` 通过。
+- 2026-10-21：`make check` **54 passed**；`compileall` 通过。
 - 上下文单测：预算保留/丢弃、压力触发 `context.compress`、fallback、artifact 卸载、真实 context 插件。
 - 临时根目录 E2E：8 插件加载；`/api/context` 返回 sections/ledger，预算 500 时 system 超预算后正确丢弃可选段。
-- 线上服务已验证 Phase 3 上下文；当前由用户停止，P0 改动需重启后做一次线上回归。
+- 线上回归：重启后 8 插件加载；原句与“什么时候…”均返回 `mode=chat`，计划 id 未变化，无新 plan 事件。
