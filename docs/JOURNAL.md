@@ -205,3 +205,8 @@
 **下一步**
 
 - 用干净 Ubuntu VM 验证 `./install.sh`，然后创建 v1.2.0 Release 并开始 v2.1.0。
+
+## 2026-10-22 — 许可证改为 Unlicense
+
+- 将 MIT License 改为 **Unlicense**（公有领域），去掉署名要求，作为最宽松的开源选项。
+- 同步更新 README、中文 README、STATUS、v1.2.0 Release notes 和演示 GIF 的许可证文案。

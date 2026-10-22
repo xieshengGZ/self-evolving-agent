@@ -9,7 +9,7 @@
 
 ## 上次完成（2026-10-22）
 
-- 发布 v1.2.0：版本 API、MIT License、中英文 README、安装脚本、CI/安全文档、演示素材
+- 发布 v1.2.0：版本 API、Unlicense、中英文 README、安装脚本、CI/安全文档、演示素材
 - 建立 `AGENTS.md` + `docs/` 项目记忆；拆分 `app/kernel/`
 - 插件加载器：`plugin.json`、原子热替换、失败保留旧版
 - SQLite `state/agent.db` + `session.json` 一次性迁移；SSE `GET /api/events`

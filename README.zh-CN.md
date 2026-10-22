@@ -147,4 +147,4 @@ CI 在 Python 3.12 上运行同一套 `make check`。版本规则见 [docs/VERSI
 
 ## License
 
-MIT — 见 [LICENSE](LICENSE)。
+Unlicense（公有领域） — 见 [LICENSE](LICENSE)。
