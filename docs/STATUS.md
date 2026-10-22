@@ -9,7 +9,7 @@
 
 ## 上次完成（2026-10-22）
 
-- 发布 v1.2.0：`VERSION` + `app/version.py`、`/api/version`、state/CLI 暴露版本
+- 发布 v1.2.0：版本 API、MIT License、中英文 README、安装脚本、CI/安全文档、演示素材
 - 建立 `AGENTS.md` + `docs/` 项目记忆；拆分 `app/kernel/`
 - 插件加载器：`plugin.json`、原子热替换、失败保留旧版
 - SQLite `state/agent.db` + `session.json` 一次性迁移；SSE `GET /api/events`
@@ -35,9 +35,9 @@
 
 ## 下一步（3）
 
-1. Phase 4：类型化特权操作 + root helper + 审批/审计
-2. Phase 4：快照/回滚与沙箱策略
-3. Phase 3 收尾：LLM 压缩后端 + artifact 清理
+1. 发布 GitHub Release v1.2.0、topics/social preview；干净 VM 验证 `install.sh`
+2. v2.1.0 Phase 4：类型化特权操作 + root helper + 审批/审计
+3. Phase 4：快照/回滚与沙箱策略
 
 ## 插件状态
 

@@ -184,3 +184,24 @@
 **下一步**
 
 - 以 `v2.1.0` 开始 Phase 4：类型化特权操作、审批/审计、快照/回滚。
+
+
+## 2026-10-22 — v1.2.0 GitHub 包装
+
+**做了什么**
+
+- 新增 MIT License、英文主 README 和中文 `README.zh-CN.md`；统一标题为 Self-Evolving Agent，补徽章、演示 GIF、截图、安全与路线图。
+- 新增 `docs/assets/demo.gif`、`social-preview.png`、两张压缩 UI 截图；GIF 由真实 UI 截图和标题卡生成，后续可替换为真人录屏。
+- 新增 `install.sh`：创建 venv、交互式写入 `.env`、生成随机 token、动态生成 systemd unit/logrotate 并启动服务；`deploy.sh` 复用该脚本。
+- 新增 CI workflow、SECURITY、CONTRIBUTING、issue/PR 模板、v1.2.0 Release notes 和 GitHub 发布清单。
+- 版本仍为 v1.2.0；下一开发线 v2.1.0。
+
+**验证**
+
+- `make check`：**56 passed**，`compileall` 通过。
+- `bash -n install.sh deploy.sh` 通过；YAML 模板解析通过。
+- 需要仓库管理员手动完成的 GitHub 设置：About 描述/topics、social preview、Release 页面（当前环境没有 GitHub CLI 认证）。
+
+**下一步**
+
+- 用干净 Ubuntu VM 验证 `./install.sh`，然后创建 v1.2.0 Release 并开始 v2.1.0。

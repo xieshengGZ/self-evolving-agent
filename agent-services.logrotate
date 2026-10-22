@@ -1,3 +1,4 @@
+# Legacy example for this host. `install.sh` generates a portable unit.
 /my_agent/agent-services/state/service.log {
     daily
     rotate 7

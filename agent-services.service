@@ -1,3 +1,4 @@
+# Legacy example for this host. `install.sh` generates a portable unit.
 [Unit]
 Description=agent-services AI Agent daemon
 After=network-online.target
