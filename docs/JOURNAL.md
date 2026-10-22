@@ -145,3 +145,21 @@
 **注意**
 
 - 该会话中旧的 failed 计划仍在 `state`，可用 `POST /api/plugin/planning/reset` 清理；新逻辑不会再为概念问题建计划。
+
+## 2026-10-21 — P0：意图判定与计划护栏
+
+**做了什么**
+
+- classifier 增加概念/解释问题识别：`是什么`、`什么是`、`区别`、`解释`、`介绍`、`为什么` 等归 `chat`。
+- 显式动作（`帮我写/创建/查看/分析/修复/部署`）仍归 `task`；插件 hook 若误返回 task，core 会做一次概念问题降级。
+- planning prompt 明确：纯解释/问答不规划；不得发明用户未要求的交付物，acceptance 只验收明确要求或实际产出。
+- loop 在执行前校验 action：缺失/非字符串 action 或未知 action 时，返回定向修复提示（含可用动作和示例），不进入工具/计划记录。
+
+**验证**
+
+- `make check`：**52 passed**；`compileall` 通过。
+- 新增测试：用户原句/概念问题/“为什么部署失败”归 chat；显式写作仍 task；插件误判 task 时 core 降级；非法/未知 action 后能继续并完成计划。
+
+**注意**
+
+- 服务端当前停止，未做线上回归；重启口令：`sudo systemctl start agent-services`。

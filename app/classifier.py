@@ -35,7 +35,9 @@ QUESTION_PATTERNS = [
 ]
 
 EXPLICIT_TASK_PATTERNS = [
-    r"^(?:请|帮我|帮忙|麻烦|给我|替我|请你)?\s*(?:把|将)?.{0,40}(?:写|创建|生成|修改|删除|运行|执行|安装|部署|提交|推送|查看|读取|分析|检查|修复|实现|优化|重构|新增|添加|更新|配置|启动|停止|重启)",
+    r"^(?:请|帮我|帮忙|麻烦|给我|替我|请你)\s*(?:把|将)?.{0,40}(?:写|创建|生成|修改|删除|运行|执行|安装|部署|提交|推送|查看|读取|分析|检查|修复|实现|优化|重构|新增|添加|更新|配置|启动|停止|重启)",
+    r"^\s*(?:把|将).{0,40}(?:写|创建|生成|修改|删除|运行|执行|安装|部署|提交|推送|查看|读取|分析|检查|修复|实现|优化|重构|新增|添加|更新|配置|启动|停止|重启)",
+    r"^\s*(?:写|创建|生成|修改|删除|运行|执行|安装|部署|提交|推送|查看|读取|分析|检查|修复|实现|优化|重构|新增|添加|更新|配置|启动|停止|重启)",
 ]
 
 TASK_VERBS = [
@@ -54,6 +56,16 @@ def _search(patterns, text: str) -> bool:
     return any(re.search(pattern, text, re.I) for pattern in patterns)
 
 
+def is_explanatory(text: Any) -> bool:
+    """判断概念/解释类问题；显式“帮我写/查看/修复”等动作不算。"""
+    if not isinstance(text, str):
+        return False
+    value = text.strip()
+    if not value or _match(EXPLICIT_TASK_PATTERNS, value):
+        return False
+    return _search(QUESTION_PATTERNS, value)
+
+
 def _rules(text: Any) -> str:
     if not isinstance(text, str):
         return "task"
@@ -68,11 +80,11 @@ def _rules(text: Any) -> str:
         return "chat"
     if _match(EXPLICIT_TASK_PATTERNS, value):
         return "task"
+    if is_explanatory(value):
+        return "chat"
     low = value.lower()
     if any(verb in low for verb in TASK_VERBS):
         return "task"
-    if _search(QUESTION_PATTERNS, value):
-        return "chat"
     return "task"
 
 
@@ -82,6 +94,8 @@ def classify(text: Any) -> str:
 
         for result in get_runtime().emit_hook("classify.prompt", text=text):
             if isinstance(result, str) and result in MODES:
+                if result == "task" and is_explanatory(text):
+                    return "chat"
                 return result
     except Exception:  # noqa: BLE001
         pass

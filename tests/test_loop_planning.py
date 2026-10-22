@@ -56,6 +56,8 @@ def test_agent_loop_creates_executes_and_verifies_plan(monkeypatch, tmp_path):
 
     replies = iter(
         [
+            {"kind": "assistant", "message": "not an action"},
+            {"action": "nope"},
             {"action": "shell", "command": "true"},
             {"action": "done", "message": "finished"},
         ]
@@ -76,4 +78,12 @@ def test_agent_loop_creates_executes_and_verifies_plan(monkeypatch, tmp_path):
     assert runtime.executed == [{"action": "shell", "command": "true"}]
     assert local_session.get_status() == "idle"
     assert any(event["kind"] == "done" for event in local_session.events)
+    assert any(
+        event["kind"] == "error" and "action" in event["message"]
+        for event in local_session.events
+    )
+    assert any(
+        event["kind"] == "error" and "未知 action" in event["message"]
+        for event in local_session.events
+    )
     assert db.get_plan(state["plan"]["id"])["status"] == "done"

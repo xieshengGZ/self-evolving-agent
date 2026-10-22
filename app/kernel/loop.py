@@ -64,6 +64,31 @@ def parse_action(text: Any) -> Optional[Dict[str, Any]]:
     return obj if isinstance(obj, dict) else None
 
 
+def _available_actions(runtime: Any) -> List[str]:
+    names: List[str] = []
+    try:
+        names = [str(name) for name in runtime.plugins.tool_names()]
+    except Exception:  # noqa: BLE001
+        pass
+    if "done" not in names:
+        names.append("done")
+    return sorted(set(names))
+
+
+def _action_problem(action: Dict[str, Any], runtime: Any) -> Optional[str]:
+    name = action.get("action") if isinstance(action, dict) else None
+    actions = ", ".join(_available_actions(runtime))
+    if not isinstance(name, str) or not name.strip():
+        return (
+            "模型回复不是可执行动作：缺少非空字符串字段 action。"
+            "只返回一个 JSON 动作对象，例如 {\"action\":\"shell\",\"command\":\"...\"} "
+            f"或 {{\"action\":\"done\",\"message\":\"...\"}}；可用动作: {actions}。"
+        )
+    if name not in _available_actions(runtime):
+        return f"未知 action: {name}。可用动作: {actions}。请重新选择。"
+    return None
+
+
 def _append_event(kind: str, message: str) -> None:
     session.add_event(kind, message)
 
@@ -216,7 +241,15 @@ def agent_loop() -> None:
                 continue
             if action is None:
                 fails += 1
-                _fail("无法解析为 JSON 动作，请只返回一个 JSON 对象，不要加解释或围栏")
+                _fail(
+                    "无法解析为 JSON 动作，请只返回一个 JSON 对象，不要加解释或围栏。"
+                    "可用动作: " + ", ".join(_available_actions(runtime))
+                )
+                continue
+            problem = _action_problem(action, runtime)
+            if problem:
+                fails += 1
+                _fail(problem)
                 continue
             fails = 0
 

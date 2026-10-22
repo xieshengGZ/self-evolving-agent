@@ -47,6 +47,8 @@ def test_classifier_plugin_rules():
         text="事件经 SSE 推前端、状态持久化到 SQLite。 sse是什么，sqlite是什么",
     ) == ["chat"]
     assert hooks.emit("classify.prompt", text="SSE 和 SQLite 有什么区别？") == ["chat"]
+    assert hooks.emit("classify.prompt", text="为什么部署失败") == ["chat"]
+    assert hooks.emit("classify.prompt", text="git 是什么") == ["chat"]
 
 
 def test_classifier_keeps_concept_questions_out_of_task_mode():
@@ -56,8 +58,24 @@ def test_classifier_keeps_concept_questions_out_of_task_mode():
         "事件经 SSE 推前端、状态持久化到 SQLite。 sse是什么，sqlite是什么"
     ) == "chat"
     assert classifier.classify("解释一下 SSE 和 SQLite") == "chat"
+    assert classifier.classify("为什么部署失败") == "chat"
+    assert classifier.classify("git 是什么") == "chat"
+    assert classifier.is_explanatory("SSE 是什么") is True
+    assert classifier.is_explanatory("帮我写 SSE 文档") is False
     assert classifier.classify("帮我把 SSE 和 SQLite 写成文档") == "task"
     assert classifier.classify("查看 app/main.py") == "task"
+
+
+def test_classifier_downgrades_plugin_task_for_concept_question(monkeypatch):
+    import app.classifier as classifier_mod
+
+    class FakeRuntime:
+        def emit_hook(self, event, **kwargs):
+            return ["task"]
+
+    monkeypatch.setattr("app.kernel.get_runtime", lambda: FakeRuntime())
+    assert classifier_mod.classify("SSE 是什么") == "chat"
+    assert classifier_mod.classify("查看 app/main.py") == "task"
 
 
 def test_planning_plugin_create_and_reset():
