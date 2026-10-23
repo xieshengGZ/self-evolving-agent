@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from app import classifier, config, context, deepseek, planning, selfupdate, session
 from app.kernel import get_runtime
 from app.kernel.http import register_plugin_routes
-from app.kernel.loop import agent_loop, load_chat_prompt, load_system_prompt
+from app.kernel.loop import agent_loop, load_chat_prompt, load_system_prompt, parse_action
 from app.kernel.sse import sse_response
 from app.version import CHANNEL, VERSION
 
@@ -199,6 +199,113 @@ def _handle_control(prompt: str) -> JSONResponse:
     return JSONResponse({"mode": "control", "action": "noop", "ok": True})
 
 
+_FALLBACK_ACTION_NAMES = {
+    "shell",
+    "write_file",
+    "read_file",
+    "self_restart",
+    "read_symbol",
+    "read_file_summary",
+    "rebuild_index",
+    "done",
+}
+
+_CONFIRM_CUES = (
+    "要继续",
+    "继续执行",
+    "是否开始",
+    "要不要",
+    "确认的话",
+    "要我现在",
+    "需要我继续",
+    "需要我执行",
+)
+
+
+def _known_action_names() -> set[str]:
+    names = set(_FALLBACK_ACTION_NAMES)
+    try:
+        names.update(_runtime.plugins.tool_names())
+    except Exception:  # noqa: BLE001
+        pass
+    names.add("done")
+    return names
+
+
+def _looks_like_action_payload(text: object) -> bool:
+    if not isinstance(text, str):
+        return False
+    action = parse_action(text)
+    if not isinstance(action, dict):
+        return False
+    name = action.get("action")
+    return isinstance(name, str) and name in _known_action_names()
+
+
+def _has_pending_work() -> bool:
+    """A confirmation is only resumable if a task or non-terminal plan exists."""
+    if not (session.get_task() or "").strip():
+        return False
+    try:
+        plan = planning.load_plan()
+    except Exception:  # noqa: BLE001
+        return True
+    if plan is None:
+        return True
+    return plan.status not in ("done", "failed", "cancelled")
+
+
+def _last_confirmed_task(prompt: str) -> str:
+    """Recover the task when the assistant asked "shall I continue?" and the
+    user answers with a short confirmation such as "开始".
+    """
+    try:
+        history = session.get_history()
+    except Exception:  # noqa: BLE001
+        return ""
+    last_assistant = next(
+        (item for item in reversed(history) if item.get("role") == "assistant"),
+        None,
+    )
+    if not last_assistant:
+        return ""
+    content = str(last_assistant.get("content") or "")
+    if not content or not any(cue in content for cue in _CONFIRM_CUES):
+        return ""
+
+    checked = 0
+    for item in reversed(history):
+        if item.get("role") != "user":
+            continue
+        text = str(item.get("content") or "").strip()
+        if not text or text == prompt.strip():
+            continue
+        checked += 1
+        if checked > 20:
+            break
+        if classifier.classify_rules(text) == "task":
+            return text
+    return ""
+
+
+def _chat_messages() -> list[dict]:
+    """Build chat context without old action-protocol messages.
+
+    Agent history intentionally stores JSON actions for task runs. Feeding those
+    to a chat model makes it imitate the protocol and display tool calls as
+    prose, so strip only those assistant messages from this view.
+    """
+    messages = context.build(load_chat_prompt(), runtime=_runtime)["messages"]
+    return [
+        item
+        for item in messages
+        if not (
+            item.get("role") == "assistant"
+            and _looks_like_action_payload(item.get("content"))
+        )
+    ]
+
+
 @app.post("/api/chat", dependencies=[Depends(require_token)])
 async def api_chat(request: Request) -> JSONResponse:
     try:
@@ -211,6 +318,20 @@ async def api_chat(request: Request) -> JSONResponse:
 
     route = classifier.explain(prompt)
     mode = route["mode"]
+    resume_task = ""
+    if mode == "continuation" and not _has_pending_work():
+        candidate = _last_confirmed_task(prompt)
+        if candidate:
+            resume_task = candidate
+            mode = "task"
+            route = {**route, "mode": "task", "reason": "affirmative-resume"}
+        else:
+            mode = "chat"
+            route = {
+                **route,
+                "mode": "chat",
+                "reason": route.get("reason", "") + "+no-pending-work",
+            }
     try:
         session.add_event(
             "route",
@@ -245,14 +366,16 @@ async def api_chat(request: Request) -> JSONResponse:
 
     if mode == "task":
         old_task = (session.get_task() or "").strip()
-        new_task = prompt.strip()
+        new_task = (resume_task or prompt).strip()
         if old_task and old_task != new_task:
             try:
                 planning.clear_plan("new task")
                 session.add_event("info", "检测到新任务，已重置旧计划")
             except Exception:  # noqa: BLE001
                 pass
-        session.set_task(prompt)
+        session.set_task(new_task)
+        if resume_task:
+            session.add_event("info", "从确认对话恢复任务：" + new_task[:120])
     elif mode == "continuation":
         if not (session.get_task() or "").strip():
             session.set_task(prompt)
@@ -267,10 +390,19 @@ async def api_chat(request: Request) -> JSONResponse:
     if mode == "chat":
         try:
             session.add_event("info", "对话模式")
-            msgs = context.build(load_chat_prompt(), runtime=_runtime)["messages"]
+            msgs = _chat_messages()
             reply = deepseek.chat_text(msgs)
-            session.append_history("assistant", reply)
-            session.add_event("assistant", str(reply))
+            if _looks_like_action_payload(reply):
+                note = (
+                    "这一步需要执行操作，但当前是对话模式。请把要做的事作为任务重新发送；"
+                    "例如：先修 1（影响用户体验，改动最小）。"
+                )
+                session.add_event("warn", "对话模式拦截了动作 JSON，未执行")
+                session.append_history("assistant", note)
+                session.add_event("assistant", note)
+            else:
+                session.append_history("assistant", reply)
+                session.add_event("assistant", str(reply))
         except Exception as e:
             session.add_event("error", f"chat 失败: {e}")
             session.append_history("assistant", f"[error] {e}")

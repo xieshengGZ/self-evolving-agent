@@ -45,6 +45,13 @@ def test_explicit_actions_route_to_task(prompt):
 def test_control_and_continuation_are_not_tasks():
     assert classifier.classify("停止") == "control"
     assert classifier.classify("继续") == "continuation"
+    assert classifier.classify("开始") == "continuation"
+    assert classifier.classify("要") == "continuation"
+    assert classifier.classify("好的") == "continuation"
+
+
+def test_imperative_with_prefix_is_a_task():
+    assert classifier.classify("先修 1（影响用户体验，改动最小）。改动前先提交github。") == "task"
 
 
 def test_default_is_chat_with_reason():

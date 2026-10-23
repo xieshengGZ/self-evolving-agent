@@ -22,6 +22,8 @@ CONTROL_PATTERNS = [
 CONTINUATION_PATTERNS = [
     r"^(继续|接着|往下|下一步|然后呢|go\s*on|continue|resume)",
     r"^(接着做|继续做|继续执行|继续刚才)",
+    r"^(开始|开始吧|开始执行|执行吧|开干|动手吧|干吧|马上开始)[\s!！。]*$",
+    r"^(要|好|好的|可以|行|嗯|确认|确定|没问题|ok|okay|yes)[\s!！。]*$",
 ]
 
 CHAT_PATTERNS = [
@@ -65,6 +67,8 @@ BA_TASK_PATTERNS = [
 # "查看 app/main.py" / "部署服务"
 DIRECT_TASK_PATTERNS = [
     rf"^\s*(?:{ACTION_VERBS})",
+    # "先修 1" / "先处理一下"：先/直接 等前缀后的动作仍是明确任务
+    rf"^\s*(?:先|先来|直接|立刻|马上|现在|现在就)\s*(?:{ACTION_VERBS}|修|做|处理|弄|搞)(?=\s|\d|一下|下|吧|$)",
 ]
 # "git status" / "docker compose ps"
 COMMAND_TASK_PATTERNS = [
