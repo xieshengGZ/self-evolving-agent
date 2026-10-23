@@ -23,6 +23,7 @@
 - P0：classifier 识别是什么/为什么/什么时候/区别等概念问题为 chat，并防止插件误判为 task；显式写/查看/修复仍为 task
 - P0：planning prompt 禁止为用户未要求的交付物发明验收；loop 对缺失/未知 action 给定向修复提示
 - P0：chat 模式改用 `chat_text()` 返回原始文本，避免答案中的 JSON 被当作动作；测试统一覆盖环境变量
+- 2026-10-23：路由系统化：默认 chat、单一规则源、规划失败/连续协议失败回退聊天、Pydantic Action 校验、JSON repair、route 事件观测
 
 ## 已知问题
 
@@ -30,7 +31,7 @@
 - `context.compress` 只有扩展点，尚未内置 LLM 压缩后端
 - artifact 目录尚无自动清理/保留上限
 - `depends_on` 仅展示，尚未参与计划调度
-- 意图分类仍是规则 + 插件 hook，不是语义模型；复杂混合请求可能误判
+- 意图分类仍是规则 + 插件 hook（默认 chat）；语义混合请求仍可能误判
 - SSE token 走查询参数，可能进入访问日志（单用户环境可接受，ADR-009）
 
 ## 下一步（3）
@@ -45,7 +46,7 @@
 |---|---|---|---|
 | `tools_basic` | 0.1.0 | active | shell / 文件工具 / self_restart / 符号工具 |
 | `planning` | 0.1.0 | active | 计划 create/revise；`status` / `reset` |
-| `classifier` | 0.1.0 | active | `classify.prompt` 四模式分类 |
+| `classifier` | 0.1.0 | active | `classify.prompt` 四模式分类；薄适配器复用核心规则 |
 | `context_base` | 0.1.0 | active | system / task sections |
 | `context_plan` | 0.1.0 | active | plan section |
 | `context_memory` | 0.1.0 | active | memory section |
@@ -53,8 +54,7 @@
 | `hello` | 0.1.0 | experimental | 热加载演示 |
 
 ## 最近验证
-
-- 2026-10-23：`make check` **59 passed**；长任务终态/停止原因、JSON Output、favicon 已上线。
+- 2026-10-23：`make check` **89 passed**；路由/规划门禁/协议修复/聊天兜底、长任务终态、JSON Output、favicon 已上线。
 - 上下文单测：预算保留/丢弃、压力触发 `context.compress`、fallback、artifact 卸载、真实 context 插件。
 - 临时根目录 E2E：8 插件加载；`/api/context` 返回 sections/ledger，预算 500 时 system 超预算后正确丢弃可选段。
-- 线上回归：重启后 8 插件加载；原句与“什么时候…”均返回 `mode=chat`，计划 id 未变化，无新 plan 事件。
+- 线上回归：自重启后 8 插件加载；`route` 事件显示 `mode=control source=plugin`，favicon 返回 200。

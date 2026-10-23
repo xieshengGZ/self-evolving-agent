@@ -1,10 +1,15 @@
-"""Prompt classification with plugin hook + rule fallback.
+"""Prompt routing with plugin hook + one conservative rule set.
 
-The `classifier` plugin is preferred. If it is disabled, missing, or throws,
-these rules keep the chat/task split working with zero extra API cost.
+Design rules:
+- Default to `chat`; only explicit actions, continuations, or control commands
+  are allowed to start the agent loop.
+- Concept/question wording wins over incidental action words ("docker ... 什么意思").
+- This module is the single source of truth; the classifier plugin delegates here.
 """
+from __future__ import annotations
+
 import re
-from typing import Any
+from typing import Any, Dict
 
 MODES = {"chat", "task", "continuation", "control"}
 
@@ -37,18 +42,39 @@ QUESTION_PATTERNS = [
     r"what\s+is", r"what's", r"difference\s+between", r"how\s+does",
 ]
 
-EXPLICIT_TASK_PATTERNS = [
-    r"^(?:请|帮我|帮忙|麻烦|给我|替我|请你|能帮我|可以帮我|能否帮我)\s*(?:把|将)?.{0,40}(?:写|创建|生成|修改|删除|运行|执行|安装|部署|提交|推送|查看|读取|分析|检查|修复|实现|优化|重构|新增|添加|更新|配置|启动|停止|重启)",
-    r"^\s*(?:把|将).{0,40}(?:写|创建|生成|修改|删除|运行|执行|安装|部署|提交|推送|查看|读取|分析|检查|修复|实现|优化|重构|新增|添加|更新|配置|启动|停止|重启)",
-    r"^\s*(?:写|创建|生成|修改|删除|运行|执行|安装|部署|提交|推送|查看|读取|分析|检查|修复|实现|优化|重构|新增|添加|更新|配置|启动|停止|重启)",
+# Strong action verbs. Keep this list about imperative actions, not nouns that
+# merely appear inside questions (e.g. "部署失败").
+ACTION_VERBS = (
+    "写|创建|生成|修改|删除|运行|执行|安装|部署|提交|推送|查看|查|读取|读|"
+    "分析|检查|修复|实现|优化|重构|新增|添加|更新|配置|启动|停止|重启|编译|"
+    "测试|清理|下载|上传|复制|移动|列出|列|打开|关闭|跑|装|卸|删|改|看"
+)
+TOOL_PREFIXES = (
+    "git|docker|docker-compose|systemctl|pip|pip3|apt|apt-get|npm|pnpm|yarn|"
+    "curl|wget|python|python3|bash|sh|make|ls|cat|grep|find|sed|awk"
+)
+POLITE_PREFIX = r"(?:请|帮我|帮忙|麻烦|给我|替我|请你|能帮我|可以帮我|能否帮我)"
+
+# "帮我查一下 README" / "把这个文件删了"
+POLITE_TASK_PATTERNS = [
+    rf"^{POLITE_PREFIX}\s*(?:把|将)?.{{0,40}}(?:{ACTION_VERBS})",
+]
+BA_TASK_PATTERNS = [
+    rf"^\s*(?:把|将).{{0,40}}(?:{ACTION_VERBS})",
+]
+# "查看 app/main.py" / "部署服务"
+DIRECT_TASK_PATTERNS = [
+    rf"^\s*(?:{ACTION_VERBS})",
+]
+# "git status" / "docker compose ps"
+COMMAND_TASK_PATTERNS = [
+    rf"^\s*(?:{TOOL_PREFIXES})\b",
 ]
 
-TASK_VERBS = [
-    "执行", "运行", "创建", "修改", "删除", "部署", "安装", "读取",
-    "查询", "启动", "停止", "重启", "编译", "测试", "提交", "推送",
-    "写", "读", "看", "查", "改", "跑", "列", "装", "卸",
-    "git", "docker", "systemctl", "pip", "apt", "npm", "curl", "wget",
-]
+# Used by `is_explanatory`: a bare tool name ("git 是什么") is not an action
+# request, so questions containing it still route to chat.
+ACTION_TASK_PATTERNS = POLITE_TASK_PATTERNS + BA_TASK_PATTERNS + DIRECT_TASK_PATTERNS
+TASK_PATTERNS = ACTION_TASK_PATTERNS + COMMAND_TASK_PATTERNS
 
 
 def _match(patterns, text: str) -> bool:
@@ -60,46 +86,61 @@ def _search(patterns, text: str) -> bool:
 
 
 def is_explanatory(text: Any) -> bool:
-    """判断概念/解释类问题；显式“帮我写/查看/修复”等动作不算。"""
+    """概念/解释类问题；显式“帮我写/查看/修复”等动作不算。"""
     if not isinstance(text, str):
         return False
     value = text.strip()
-    if not value or _match(EXPLICIT_TASK_PATTERNS, value):
+    if not value or _match(ACTION_TASK_PATTERNS, value):
         return False
     return _search(QUESTION_PATTERNS, value)
 
 
-def _rules(text: Any) -> str:
+def _rules_with_reason(text: Any) -> Dict[str, str]:
     if not isinstance(text, str):
-        return "task"
+        return {"mode": "chat", "source": "rules", "reason": "invalid-input"}
     value = text.strip()
     if not value:
-        return "chat"
+        return {"mode": "chat", "source": "rules", "reason": "empty"}
     if _match(CONTROL_PATTERNS, value):
-        return "control"
+        return {"mode": "control", "source": "rules", "reason": "control-command"}
     if _match(CONTINUATION_PATTERNS, value):
-        return "continuation"
+        return {"mode": "continuation", "source": "rules", "reason": "continuation"}
     if _match(CHAT_PATTERNS, value):
-        return "chat"
-    if _match(EXPLICIT_TASK_PATTERNS, value):
-        return "task"
+        return {"mode": "chat", "source": "rules", "reason": "greeting"}
     if is_explanatory(value):
-        return "chat"
-    low = value.lower()
-    if any(verb in low for verb in TASK_VERBS):
-        return "task"
-    return "task"
+        return {"mode": "chat", "source": "rules", "reason": "question-pattern"}
+    if _match(TASK_PATTERNS, value):
+        return {"mode": "task", "source": "rules", "reason": "explicit-action"}
+    return {"mode": "chat", "source": "rules", "reason": "default-chat"}
 
 
-def classify(text: Any) -> str:
+def classify_rules(text: Any) -> str:
+    """Pure rule classification; the plugin uses this without re-entering hooks."""
+    return _rules_with_reason(text)["mode"]
+
+
+def _rules(text: Any) -> str:
+    return classify_rules(text)
+
+
+def explain(text: Any) -> Dict[str, str]:
+    """Return mode/source/reason for logs; defaults to chat on uncertainty."""
     try:
         from app.kernel import get_runtime
 
         for result in get_runtime().emit_hook("classify.prompt", text=text):
             if isinstance(result, str) and result in MODES:
                 if result == "task" and is_explanatory(text):
-                    return "chat"
-                return result
+                    return {
+                        "mode": "chat",
+                        "source": "plugin",
+                        "reason": "plugin-task-overridden-by-question",
+                    }
+                return {"mode": result, "source": "plugin", "reason": "classify.prompt"}
     except Exception:  # noqa: BLE001
         pass
-    return _rules(text)
+    return _rules_with_reason(text)
+
+
+def classify(text: Any) -> str:
+    return explain(text)["mode"]

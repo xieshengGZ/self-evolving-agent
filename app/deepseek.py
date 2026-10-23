@@ -133,9 +133,28 @@ def chat_text(messages: list[dict[str, str]]) -> str:
 
 
 def chat(messages: list[dict[str, str]]) -> dict[str, Any]:
-    """动作模式：启用 JSON Output，并提取单个 JSON 动作。"""
+    """动作模式：启用 JSON Output，并在协议损坏时做一次定向修复。"""
     raw = _complete(messages, json_mode=True)
     # DeepSeek 文档提示 JSON Output 偶尔可能返回空 content，退回普通模式再试一次。
     if not raw.strip():
         raw = _complete(messages, json_mode=False)
-    return _extract_json(raw)
+    try:
+        return _extract_json(raw)
+    except DeepSeekError as first_error:
+        repair = list(messages)
+        repair.append({"role": "assistant", "content": raw[:4000]})
+        repair.append(
+            {
+                "role": "user",
+                "content": (
+                    "上一条回复不是合法的 JSON 动作。请只返回一个 JSON 对象，"
+                    "不要解释、不要 markdown 围栏，并包含非空字符串字段 action。"
+                    "可用动作示例：{\"action\":\"done\",\"message\":\"...\"}"
+                ),
+            }
+        )
+        try:
+            repaired = _complete(repair, json_mode=True)
+            return _extract_json(repaired)
+        except DeepSeekError:
+            raise first_error

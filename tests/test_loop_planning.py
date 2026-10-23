@@ -90,3 +90,69 @@ def test_agent_loop_creates_executes_and_verifies_plan(monkeypatch, tmp_path):
         for event in local_session.events
     )
     assert db.get_plan(state["plan"]["id"])["status"] == "done"
+
+
+class EmptyPlanner:
+    def create(self, task, actions=None):
+        raise RuntimeError("empty plan")
+
+    def revise(self, plan, feedback, actions=None):
+        raise RuntimeError("empty plan")
+
+
+def _local_session(tmp_path, task="run a tiny task"):
+    db = Storage(tmp_path / "agent.db")
+    db.init()
+    local_session = Session(storage_backend=db, auto_migrate=False)
+    local_session.load()
+    local_session.set_task(task)
+    local_session.set_status("running")
+    return local_session, db
+
+
+def test_empty_plan_falls_back_to_chat(monkeypatch, tmp_path):
+    local_session, db = _local_session(tmp_path, "docker compose exec -T app 什么意思")
+    runtime = FakeRuntime(EmptyPlanner())
+
+    monkeypatch.setattr(loop_mod, "session", local_session)
+    monkeypatch.setattr(planning, "session", local_session)
+    monkeypatch.setattr(planning, "_audit_storage", lambda: db)
+    monkeypatch.setattr(loop_mod, "get_runtime", lambda: runtime)
+    monkeypatch.setattr(loop_mod.deepseek, "chat_text", lambda messages: "直接回答用户")
+    monkeypatch.setattr(
+        loop_mod.deepseek,
+        "chat",
+        lambda messages: (_ for _ in ()).throw(AssertionError("must not run loop")),
+    )
+
+    loop_mod.agent_loop()
+
+    assert local_session.get_status() == "idle"
+    assert local_session.get_last_stop()["reason"] == "chat_fallback"
+    assert not any(event["kind"] == "info" and "step 1/" in event["message"] for event in local_session.events)
+    assert local_session.history[-1] == {"role": "assistant", "content": "直接回答用户"}
+    assert any(event["kind"] == "done" and event["message"] == "直接回答用户" for event in local_session.events)
+
+
+def test_no_tool_failures_fall_back_to_chat(monkeypatch, tmp_path):
+    local_session, db = _local_session(tmp_path)
+    runtime = FakeRuntime(EmptyPlanner())
+
+    monkeypatch.setattr(loop_mod, "session", local_session)
+    monkeypatch.setattr(planning, "session", local_session)
+    monkeypatch.setattr(planning, "_audit_storage", lambda: db)
+    monkeypatch.setattr(loop_mod, "get_runtime", lambda: runtime)
+    monkeypatch.setattr(loop_mod.config, "AGENT_ENABLE_PLANNER", 0)
+    monkeypatch.setattr(loop_mod.config, "AGENT_MAX_CONSECUTIVE_FAILURES", 3)
+    monkeypatch.setattr(
+        loop_mod.deepseek,
+        "chat",
+        lambda messages: (_ for _ in ()).throw(loop_mod.deepseek.DeepSeekError("bad json")),
+    )
+    monkeypatch.setattr(loop_mod.deepseek, "chat_text", lambda messages: "兜底回答")
+
+    loop_mod.agent_loop()
+
+    assert local_session.get_status() == "idle"
+    assert local_session.get_last_stop()["reason"] == "chat_fallback"
+    assert local_session.history[-1] == {"role": "assistant", "content": "兜底回答"}

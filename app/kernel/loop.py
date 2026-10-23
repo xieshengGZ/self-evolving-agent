@@ -9,7 +9,7 @@ import re
 import time
 from typing import Any, Dict, List, Optional
 
-from app import config, context, deepseek, planning, session
+from app import config, context, deepseek, planning, protocol, session
 from app.kernel import get_runtime
 
 FALLBACK_PROMPT = (
@@ -17,6 +17,11 @@ FALLBACK_PROMPT = (
     "不要输出多余文字。可用动作由已加载插件提供。"
     "完成后返回 {\"action\":\"done\",\"message\":\"...\"}。"
     "不得输出任何密钥或令牌。小步执行并验证结果。"
+)
+
+CHAT_FALLBACK_PROMPT = (
+    "你是一个乐于助人的助手。当前请求无法安全地转为工具执行，"
+    "请直接用中文回答用户的问题；不要声称已经执行命令，也不要输出 JSON 动作。"
 )
 
 # 运行结束原因：既写入 state.last_stop，也用于前端状态提示。
@@ -31,6 +36,8 @@ STOP_LABELS = {
     "verification_error": "验收异常",
     "context_error": "上下文错误",
     "fatal": "异常结束",
+    "chat_fallback": "回退聊天答复",
+    "chat_fallback_failed": "回退聊天失败",
     "unknown": "结束",
 }
 
@@ -112,9 +119,10 @@ def _append_event(kind: str, message: str) -> None:
     session.add_event(kind, message)
 
 
-def _start_plan(runtime: Any) -> Optional[planning.Plan]:
+def _start_plan(runtime: Any) -> tuple[Optional[planning.Plan], str]:
+    """Return (plan, error). A task without a valid plan must not enter the loop."""
     if not config.AGENT_ENABLE_PLANNER:
-        return None
+        return None, ""
 
     plan = planning.load_plan()
     task = (session.get_task() or "").strip()
@@ -129,10 +137,10 @@ def _start_plan(runtime: Any) -> Optional[planning.Plan]:
         else:
             _append_event("info", f"恢复计划 #{plan.id} ({plan.status})")
             planning.begin_execution(plan)
-            return plan
+            return plan, ""
 
     if not task:
-        return None
+        return None, ""
 
     try:
         created = planning.create_plan(task, runtime=runtime)
@@ -141,10 +149,34 @@ def _start_plan(runtime: Any) -> Optional[planning.Plan]:
             runtime.emit_hook("plan.created", plan=created.to_dict())
         except Exception:  # noqa: BLE001
             pass
-        return created
+        return created, ""
     except Exception as exc:  # noqa: BLE001
-        _append_event("warn", f"规划失败降级：{type(exc).__name__}: {exc}")
-        return None
+        detail = f"{type(exc).__name__}: {exc}"
+        _append_event("warn", f"规划失败：{detail}")
+        return None, detail
+
+
+def _chat_fallback(runtime: Any, reason: str = "") -> bool:
+    """Answer as chat when a task cannot be safely executed.
+
+    This is the safety valve that prevents an empty/failed plan or a broken
+    action protocol from ending with a dead-end error.
+    """
+    if reason:
+        _append_event("warn", "已回退为聊天回答：" + reason[:300])
+    try:
+        messages = context.build(CHAT_FALLBACK_PROMPT, runtime=runtime)["messages"]
+        reply = deepseek.chat_text(messages)
+        if not isinstance(reply, str) or not reply.strip():
+            raise RuntimeError("聊天兜底返回空内容")
+        session.append_history("assistant", reply)
+        _append_event("assistant", reply)
+        _append_event("done", reply)
+        session.persist()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        _append_event("error", f"聊天兜底失败: {type(exc).__name__}: {exc}")
+        return False
 
 
 def _replan(plan: planning.Plan, feedback: str, runtime: Any) -> Optional[planning.Plan]:
@@ -172,9 +204,10 @@ def agent_loop() -> None:
     """自愈循环：每步 try/except，失败转 error 回传模型，有硬性上限。"""
     runtime = get_runtime()
     steps = 0
-    plan = _start_plan(runtime)
+    plan, plan_error = _start_plan(runtime)
 
     fails = 0
+    executed_any = False
     started = time.time()
     last_action_str = ""
     repeat_count = 0
@@ -193,6 +226,13 @@ def agent_loop() -> None:
             pass
 
     try:
+        if plan_error:
+            stop_reason = "chat_fallback"
+            stop_detail = plan_error[:300]
+            if not _chat_fallback(runtime, plan_error):
+                stop_reason = "chat_fallback_failed"
+            return
+
         while steps < config.AGENT_MAX_STEPS:
             if session.is_cancelled():
                 stop_reason = "cancelled"
@@ -212,9 +252,14 @@ def agent_loop() -> None:
                         runtime,
                     )
                 if revised is None:
-                    stop_reason = "failed"
                     stop_detail = f"连续失败 {fails} 次"
-                    _append_event("error", f"连续失败 {fails} 次，停止自愈")
+                    if not executed_any:
+                        stop_reason = "chat_fallback"
+                        if not _chat_fallback(runtime, stop_detail):
+                            stop_reason = "chat_fallback_failed"
+                    else:
+                        stop_reason = "failed"
+                        _append_event("error", f"连续失败 {fails} 次，停止自愈")
                     break
                 plan = revised
                 fails = 0
@@ -273,6 +318,11 @@ def agent_loop() -> None:
                     "无法解析为 JSON 动作，请只返回一个 JSON 对象，不要加解释或围栏。"
                     "可用动作: " + ", ".join(_available_actions(runtime))
                 )
+                continue
+            action, problem = protocol.validate_action(action)
+            if problem:
+                fails += 1
+                _fail(problem)
                 continue
             problem = _action_problem(action, runtime)
             if problem:
@@ -356,6 +406,7 @@ def agent_loop() -> None:
                     continue
 
             try:
+                executed_any = True
                 result = runtime.execute_tool(action)
             except Exception as exc:  # noqa: BLE001
                 fails += 1

@@ -187,7 +187,16 @@ async def api_chat(request: Request) -> JSONResponse:
     if not isinstance(prompt, str) or not prompt.strip():
         raise HTTPException(status_code=400, detail="prompt required")
 
-    mode = classifier.classify(prompt)
+    route = classifier.explain(prompt)
+    mode = route["mode"]
+    try:
+        session.add_event(
+            "route",
+            f"mode={mode} source={route.get('source', 'rules')} "
+            f"reason={route.get('reason', '')}",
+        )
+    except Exception:  # noqa: BLE001
+        pass
     if mode == "control":
         return _handle_control(prompt)
 

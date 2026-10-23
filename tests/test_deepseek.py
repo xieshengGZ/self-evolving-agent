@@ -71,3 +71,24 @@ def test_chat_falls_back_when_json_mode_unsupported(monkeypatch):
     assert deepseek.chat([{"role": "user", "content": "return json"}])["action"] == "done"
     assert "response_format" in payloads[0]
     assert "response_format" not in payloads[1]
+
+
+def test_chat_repairs_invalid_json_once(monkeypatch):
+    class SequenceClient(FakeClient):
+        calls = 0
+        payloads = []
+
+        def post(self, *args, **kwargs):
+            SequenceClient.calls += 1
+            SequenceClient.payloads.append(kwargs.get("json"))
+            if SequenceClient.calls == 1:
+                return FakeResponse("这不是 JSON")
+            return FakeResponse('{"action":"done","message":"ok"}')
+
+    monkeypatch.setattr(deepseek.httpx, "Client", lambda **kwargs: SequenceClient(FakeResponse("")))
+    assert deepseek.chat([{"role": "user", "content": "return json"}]) == {
+        "action": "done",
+        "message": "ok",
+    }
+    assert SequenceClient.calls == 2
+    assert "不是合法的 JSON 动作" in SequenceClient.payloads[1]["messages"][-1]["content"]
