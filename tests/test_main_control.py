@@ -41,3 +41,22 @@ def test_control_works_while_agent_is_running():
     finally:
         session.clear_cancel()
         session.set_status("idle")
+
+
+def test_chat_mode_uses_conversation_prompt(monkeypatch):
+    client = TestClient(main.app)
+    captured = {}
+    session.set_status("idle")
+
+    def fake_build(prompt, runtime=None):
+        captured["prompt"] = prompt
+        return {"messages": [{"role": "system", "content": prompt}]}
+
+    monkeypatch.setattr(main, "load_chat_prompt", lambda: "CHAT_PROMPT_ONLY")
+    monkeypatch.setattr(main.context, "build", fake_build)
+    monkeypatch.setattr(main.deepseek, "chat_text", lambda messages: "纯文本回答")
+
+    response = client.post("/api/chat", json={"prompt": "你好"}, headers=AUTH)
+    assert response.status_code == 200
+    assert response.json()["mode"] == "chat"
+    assert captured["prompt"] == "CHAT_PROMPT_ONLY"

@@ -52,6 +52,12 @@ def test_default_is_chat_with_reason():
     assert route == {"mode": "chat", "source": "rules", "reason": "default-chat"}
 
 
+def test_codebase_analysis_question_needs_tools():
+    route = classifier.explain("你的架构是怎么样的。有哪些可以改进的？")
+    assert route["mode"] == "task"
+    assert route["reason"] == "codebase-analysis"
+
+
 def test_question_wins_over_incidental_tool_name():
     route = classifier.explain("docker compose exec -T app 什么意思")
     assert route["mode"] == "chat"

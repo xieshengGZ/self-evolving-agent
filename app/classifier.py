@@ -70,11 +70,17 @@ DIRECT_TASK_PATTERNS = [
 COMMAND_TASK_PATTERNS = [
     rf"^\s*(?:{TOOL_PREFIXES})\b",
 ]
+# Requests about this codebase need tools even when phrased as a question.
+CODEBASE_TASK_PATTERNS = [
+    r"^(?:请|帮我|帮忙|麻烦|你能|能否)?\s*(?:分析|审查|评估|检查|看看|看一下|review)\s*.{0,30}(?:架构|代码|项目|仓库|模块|实现|设计|问题|改进)",
+    r"(?:你的|你们的|这个|当前|本|我们|咱们)(?:项目|代码库|仓库|系统|agent|架构|代码|源码|模块|实现|设计).{0,40}(?:架构|结构|模块|实现|设计|问题|改进|优化|不足|风险|怎么样|如何)",
+    r"(?:架构|代码|项目|仓库|模块|实现|设计).{0,20}(?:有哪些|有什么|哪里).{0,20}(?:改进|问题|优化|不足|风险)",
+]
 
 # Used by `is_explanatory`: a bare tool name ("git 是什么") is not an action
 # request, so questions containing it still route to chat.
 ACTION_TASK_PATTERNS = POLITE_TASK_PATTERNS + BA_TASK_PATTERNS + DIRECT_TASK_PATTERNS
-TASK_PATTERNS = ACTION_TASK_PATTERNS + COMMAND_TASK_PATTERNS
+TASK_PATTERNS = ACTION_TASK_PATTERNS + COMMAND_TASK_PATTERNS + CODEBASE_TASK_PATTERNS
 
 
 def _match(patterns, text: str) -> bool:
@@ -92,6 +98,8 @@ def is_explanatory(text: Any) -> bool:
     value = text.strip()
     if not value or _match(ACTION_TASK_PATTERNS, value):
         return False
+    if _match(CODEBASE_TASK_PATTERNS, value):
+        return False
     return _search(QUESTION_PATTERNS, value)
 
 
@@ -107,6 +115,8 @@ def _rules_with_reason(text: Any) -> Dict[str, str]:
         return {"mode": "continuation", "source": "rules", "reason": "continuation"}
     if _match(CHAT_PATTERNS, value):
         return {"mode": "chat", "source": "rules", "reason": "greeting"}
+    if _match(CODEBASE_TASK_PATTERNS, value):
+        return {"mode": "task", "source": "rules", "reason": "codebase-analysis"}
     if is_explanatory(value):
         return {"mode": "chat", "source": "rules", "reason": "question-pattern"}
     if _match(TASK_PATTERNS, value):

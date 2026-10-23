@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from app import classifier, config, context, deepseek, planning, selfupdate, session
 from app.kernel import get_runtime
 from app.kernel.http import register_plugin_routes
-from app.kernel.loop import agent_loop, load_system_prompt
+from app.kernel.loop import agent_loop, load_chat_prompt, load_system_prompt
 from app.kernel.sse import sse_response
 from app.version import CHANNEL, VERSION
 
@@ -266,8 +266,8 @@ async def api_chat(request: Request) -> JSONResponse:
 
     if mode == "chat":
         try:
-            session.add_event("info", "闲聊模式")
-            msgs = context.build(load_system_prompt(), runtime=_runtime)["messages"]
+            session.add_event("info", "对话模式")
+            msgs = context.build(load_chat_prompt(), runtime=_runtime)["messages"]
             reply = deepseek.chat_text(msgs)
             session.append_history("assistant", reply)
             session.add_event("assistant", str(reply))

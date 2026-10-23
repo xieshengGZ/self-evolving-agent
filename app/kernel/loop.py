@@ -59,6 +59,19 @@ def load_system_prompt() -> str:
     return FALLBACK_PROMPT
 
 
+def load_chat_prompt() -> str:
+    try:
+        with open(config.CHAT_PROMPT_PATH, "r", encoding="utf-8") as handle:
+            content = handle.read().strip()
+        if content:
+            return content
+    except FileNotFoundError:
+        pass
+    except Exception:  # noqa: BLE001
+        pass
+    return CHAT_FALLBACK_PROMPT
+
+
 def parse_action(text: Any) -> Optional[Dict[str, Any]]:
     """兼容 str 和 dict：DeepSeek 客户端若返回已解析的 dict，直接使用。"""
     if isinstance(text, dict):
@@ -165,7 +178,7 @@ def _chat_fallback(runtime: Any, reason: str = "") -> bool:
     if reason:
         _append_event("warn", "已回退为聊天回答：" + reason[:300])
     try:
-        messages = context.build(CHAT_FALLBACK_PROMPT, runtime=runtime)["messages"]
+        messages = context.build(load_chat_prompt(), runtime=runtime)["messages"]
         reply = deepseek.chat_text(messages)
         if not isinstance(reply, str) or not reply.strip():
             raise RuntimeError("聊天兜底返回空内容")
