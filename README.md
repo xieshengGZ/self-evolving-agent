@@ -147,4 +147,4 @@ Issues and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.
 
 ## License
 
-Unlicense (public domain) — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

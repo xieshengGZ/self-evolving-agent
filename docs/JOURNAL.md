@@ -210,3 +210,8 @@
 
 - 将 MIT License 改为 **Unlicense**（公有领域），去掉署名要求，作为最宽松的开源选项。
 - 同步更新 README、中文 README、STATUS、v1.2.0 Release notes 和演示 GIF 的许可证文案。
+
+## 2026-10-22 — 许可证改回 MIT
+
+- 按用户要求将 Unlicense 改回 **MIT License**，恢复版权声明与许可声明保留要求。
+- 同步更新 README、中文 README、STATUS、v1.2.0 Release notes 和演示 GIF 的许可证文案。
