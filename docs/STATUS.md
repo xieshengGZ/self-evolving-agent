@@ -54,7 +54,7 @@
 | `hello` | 0.1.0 | experimental | 热加载演示 |
 
 ## 最近验证
-- 2026-10-23：`make check` **89 passed**；路由/规划门禁/协议修复/聊天兜底、长任务终态、JSON Output、favicon 已上线。
+- 2026-10-23：`make check` **90 passed**；路由/规划门禁/协议修复/聊天兜底、长任务终态、JSON Output、favicon 已上线。
 - 上下文单测：预算保留/丢弃、压力触发 `context.compress`、fallback、artifact 卸载、真实 context 插件。
 - 临时根目录 E2E：8 插件加载；`/api/context` 返回 sections/ledger，预算 500 时 system 超预算后正确丢弃可选段。
-- 线上回归：自重启后 8 插件加载；`route` 事件显示 `mode=control source=plugin`，favicon 返回 200。
+- 线上回归：自重启后 8 插件加载；`route` 事件显示 `mode=control source=plugin`，favicon.svg/ico/png 返回 200。

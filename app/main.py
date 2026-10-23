@@ -52,11 +52,33 @@ def index() -> FileResponse:
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
+FAVICON_CACHE = {"Cache-Control": "public, max-age=86400"}
+
+
 @app.get("/favicon.svg", include_in_schema=False)
 def favicon() -> FileResponse:
     return FileResponse(
         os.path.join(STATIC_DIR, "favicon.svg"),
         media_type="image/svg+xml",
+        headers=FAVICON_CACHE,
+    )
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon_ico() -> FileResponse:
+    return FileResponse(
+        os.path.join(STATIC_DIR, "favicon.ico"),
+        media_type="image/x-icon",
+        headers=FAVICON_CACHE,
+    )
+
+
+@app.get("/favicon-32.png", include_in_schema=False)
+def favicon_png() -> FileResponse:
+    return FileResponse(
+        os.path.join(STATIC_DIR, "favicon-32.png"),
+        media_type="image/png",
+        headers=FAVICON_CACHE,
     )
 
 

@@ -126,7 +126,7 @@ verify ──► done / replan（有上限）
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
-make check                 # compileall + 89 tests
+make check                 # compileall + 90 tests
 .venv/bin/python -m app.cli status
 .venv/bin/python -m app.cli map
 ```

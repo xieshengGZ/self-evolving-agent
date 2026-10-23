@@ -11,6 +11,19 @@ def test_favicon_is_served():
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("image/svg+xml")
     assert b"<svg" in response.content
+    assert response.headers["cache-control"].startswith("public")
+
+
+def test_ico_and_png_favicons_are_served():
+    client = TestClient(main.app)
+    ico = client.get("/favicon.ico")
+    assert ico.status_code == 200
+    assert ico.headers["content-type"].startswith("image/x-icon")
+    assert ico.content.startswith(b"\x00\x00\x01\x00")
+    png = client.get("/favicon-32.png")
+    assert png.status_code == 200
+    assert png.headers["content-type"].startswith("image/png")
+    assert png.content.startswith(b"\x89PNG")
 
 
 def test_control_works_while_agent_is_running():
