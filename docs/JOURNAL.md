@@ -215,3 +215,20 @@
 
 - 按用户要求将 Unlicense 改回 **MIT License**，恢复版权声明与许可声明保留要求。
 - 同步更新 README、中文 README、STATUS、v1.2.0 Release notes 和演示 GIF 的许可证文案。
+
+## 2026-10-22 — 修复新机器 root 安装报错
+
+**现象**
+
+- 新机器以 `root` 登录，执行 `./install.sh` 被旧守卫直接拒绝。
+
+**修复**
+
+- 直接 root 登录改为允许安装，但明确警告服务将以 root 运行。
+- 通过普通用户 + `sudo` 调用时，脚本先降回该普通用户，避免 venv、`.env`、`state` 被 root 拥有。
+- systemd unit/logrotate 使用实际 `SERVICE_USER`/`SERVICE_GROUP`。
+- README 中英文补充 root 安装说明。
+
+**验证**
+
+- `bash -n install.sh` 通过；root 分支用 mock `sudo`/`systemctl` 跑通。

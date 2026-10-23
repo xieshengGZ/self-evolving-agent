@@ -40,7 +40,7 @@ cd self-evolving-agent
 ./install.sh
 ```
 
-The installer creates `.venv`, installs dependencies, asks for your API key once, generates a random web token, and installs a systemd service. Then open:
+The installer creates `.venv`, installs dependencies, asks for your API key once, generates a random web token, and installs a systemd service. If you run it as root, it warns and installs the service as root; a normal user + `sudo` is recommended. Then open:
 
 ```text
 http://<your-host>:8088

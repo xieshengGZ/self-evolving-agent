@@ -4,9 +4,22 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
+# If invoked via sudo from a normal account, drop back to that account so the
+# venv, .env and state files are owned by the service user. A direct root login
+# is allowed, but the service will run as root (with a warning).
+if [ "${EUID}" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+    echo "Dropping privileges to ${SUDO_USER} for the service files."
+    exec sudo -u "${SUDO_USER}" -- "$0" "$@"
+fi
+
 if [ "${EUID}" -eq 0 ]; then
-    echo "Run this script as a normal user; it will call sudo for systemd steps." >&2
-    exit 1
+    SERVICE_USER="root"
+    SERVICE_GROUP="root"
+    echo "WARNING: installing as root; the agent service will run with root privileges."
+    echo "         Use a normal user + sudo if you want a non-root service."
+else
+    SERVICE_USER="$(id -un)"
+    SERVICE_GROUP="$(id -gn)"
 fi
 
 for cmd in python3 systemctl sudo; do
@@ -77,8 +90,8 @@ StartLimitBurst=10
 
 [Service]
 Type=simple
-User=$(id -un)
-Group=$(id -gn)
+User=$SERVICE_USER
+Group=$SERVICE_GROUP
 WorkingDirectory=$ROOT
 EnvironmentFile=$ROOT/.env
 ExecStart=$ROOT/.venv/bin/python -m app.main
@@ -110,7 +123,7 @@ $ROOT/state/service.log {
     missingok
     notifempty
     copytruncate
-    su $(id -un) $(id -gn)
+    su $SERVICE_USER $SERVICE_GROUP
 }
 LOGROTATE_EOF
 

@@ -40,7 +40,7 @@ cd self-evolving-agent
 ./install.sh
 ```
 
-安装脚本会创建 `.venv`、安装依赖、询问一次 API Key、生成随机的 Web token，并安装 systemd 服务。然后打开：
+安装脚本会创建 `.venv`、安装依赖、询问一次 API Key、生成随机的 Web token，并安装 systemd 服务。如果直接以 root 运行，脚本会警告并以 root 安装服务；更推荐普通用户 + `sudo`。然后打开：
 
 ```text
 http://<你的主机>:8088
