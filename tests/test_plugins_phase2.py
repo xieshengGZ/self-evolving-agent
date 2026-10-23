@@ -50,6 +50,9 @@ def test_classifier_plugin_rules():
     assert hooks.emit("classify.prompt", text="为什么部署失败") == ["chat"]
     assert hooks.emit("classify.prompt", text="git 是什么") == ["chat"]
     assert hooks.emit(
+        "classify.prompt", text="docker compose exec -T app 什么意思"
+    ) == ["chat"]
+    assert hooks.emit(
         "classify.prompt",
         text="什么时候会有这么复杂的业务。到时候我使用子agent实现具体的业务流程不就行了吗",
     ) == ["chat"]
@@ -64,6 +67,8 @@ def test_classifier_keeps_concept_questions_out_of_task_mode():
     assert classifier.classify("解释一下 SSE 和 SQLite") == "chat"
     assert classifier.classify("为什么部署失败") == "chat"
     assert classifier.classify("git 是什么") == "chat"
+    assert classifier.classify("docker compose exec -T app 什么意思") == "chat"
+    assert classifier.classify("什么意思") == "chat"
     assert classifier.classify(
         "什么时候会有这么复杂的业务。到时候我使用子agent实现具体的业务流程不就行了吗"
     ) == "chat"
