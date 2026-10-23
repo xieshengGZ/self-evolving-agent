@@ -77,7 +77,10 @@ def test_agent_loop_creates_executes_and_verifies_plan(monkeypatch, tmp_path):
     assert state["plan"]["steps"][0]["status"] == "done"
     assert runtime.executed == [{"action": "shell", "command": "true"}]
     assert local_session.get_status() == "idle"
+    assert local_session.get_last_stop()["reason"] == "done"
     assert any(event["kind"] == "done" for event in local_session.events)
+    assert local_session.events[-1]["kind"] == "status"
+    assert "完成" in local_session.events[-1]["message"]
     assert any(
         event["kind"] == "error" and "action" in event["message"]
         for event in local_session.events

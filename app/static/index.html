@@ -4,6 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>agent-services</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" type="image/svg+xml" href="/favicon.svg" />
 <style>
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -32,6 +34,15 @@
     font-weight: 600;
     color: #9ecbff;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .brand-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    display: block;
   }
   input, button, textarea { font-family: inherit; font-size: 13px; }
   input[type="password"], input[type="text"] {
@@ -335,7 +346,7 @@
 </head>
 <body>
 <header>
-  <h1>agent-services</h1>
+  <h1><img class="brand-icon" src="/favicon.svg" alt="" />agent-services</h1>
   <span id="statusPill" class="status-pill">unknown</span>
   <input id="token" type="password" placeholder="AGENT_WEB_TOKEN" style="width: 200px;" />
   <button id="saveToken" class="secondary">保存 Token</button>
@@ -389,6 +400,8 @@
     lastEventId: 0,
     source: null,
     lastError: null,
+    lastStop: null,
+    sending: false,
     expanded: {},  // 记录用户手动展开的消息索引
     memConv: null
   };
@@ -440,10 +453,31 @@
     setTimeout(function () { renderStatus(state.status); }, 1800);
   }
 
+  var STOP_LABELS = {
+    done: "完成",
+    cancelled: "已停止",
+    max_steps: "达到步数上限",
+    max_runtime: "达到运行时长",
+    failed: "连续失败",
+    repeated_action: "重复动作",
+    verification_failed: "验收未通过",
+    verification_error: "验收异常",
+    context_error: "上下文错误",
+    fatal: "异常结束",
+    unknown: "结束"
+  };
+
   function renderStatus(status) {
     state.status = status || "unknown";
     var pill = el.statusPill;
-    pill.textContent = state.status;
+    var label = state.status;
+    var detail = "";
+    if (state.status === "idle" && state.lastStop && state.lastStop.reason) {
+      label += " · " + (STOP_LABELS[state.lastStop.reason] || state.lastStop.reason);
+      detail = state.lastStop.detail || "";
+    }
+    pill.textContent = label;
+    pill.title = detail;
     pill.className = "status-pill " + (state.status === "running" ? "running" : (state.status === "idle" ? "idle" : ""));
     var running = state.status === "running";
     el.sendBtn.disabled = running;
@@ -652,6 +686,7 @@
   function applyState(data) {
     if (!data) return;
     state.lastError = null;
+    state.lastStop = data.last_stop || null;
     renderStatus(data.status);
     if (Array.isArray(data.history)) {
       var changed = JSON.stringify(data.history) !== JSON.stringify(state.history);
@@ -729,9 +764,11 @@
   }
 
   function sendPrompt() {
+    if (state.sending) return;
     var text = (el.prompt.value || "").trim();
     if (!text) return;
     if (!getToken()) { setHint("请先填写 Token", true); return; }
+    state.sending = true;
     el.sendBtn.disabled = true;
     postJSON("/api/chat", { prompt: text })
       .then(function () {
@@ -741,7 +778,10 @@
         scrollToBottom();
       })
       .catch(function (err) { setHint("发送失败: " + err.message, true); })
-      .then(function () { renderStatus(state.status); });
+      .then(function () {
+        state.sending = false;
+        renderStatus(state.status);
+      });
   }
 
   function doStop() {
@@ -943,6 +983,10 @@
     bind();
     renderStatus("unknown");
     connectEvents();
+    // SSE 断线/漏事件时的兜底：低频拉取，保证 running/idle 最终一致。
+    setInterval(function () {
+      if (getToken()) fetchState();
+    }, 5000);
   }
 
   if (document.readyState === "loading") {

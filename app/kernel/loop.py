@@ -19,6 +19,25 @@ FALLBACK_PROMPT = (
     "不得输出任何密钥或令牌。小步执行并验证结果。"
 )
 
+# 运行结束原因：既写入 state.last_stop，也用于前端状态提示。
+STOP_LABELS = {
+    "done": "完成",
+    "cancelled": "已停止",
+    "max_steps": "达到步数上限",
+    "max_runtime": "达到运行时长",
+    "failed": "连续失败",
+    "repeated_action": "重复动作",
+    "verification_failed": "验收未通过",
+    "verification_error": "验收异常",
+    "context_error": "上下文错误",
+    "fatal": "异常结束",
+    "unknown": "结束",
+}
+
+
+def _stop_label(reason: str) -> str:
+    return STOP_LABELS.get(reason, reason or "结束")
+
 
 def load_system_prompt() -> str:
     try:
@@ -159,6 +178,8 @@ def agent_loop() -> None:
     started = time.time()
     last_action_str = ""
     repeat_count = 0
+    stop_reason = "unknown"
+    stop_detail = ""
 
     def _fail(msg: str) -> None:
         try:
@@ -174,9 +195,12 @@ def agent_loop() -> None:
     try:
         while steps < config.AGENT_MAX_STEPS:
             if session.is_cancelled():
+                stop_reason = "cancelled"
                 _append_event("info", "任务被用户取消")
                 break
             if time.time() - started > config.AGENT_MAX_RUNTIME:
+                stop_reason = "max_runtime"
+                stop_detail = f"{config.AGENT_MAX_RUNTIME}s"
                 _append_event("error", f"超过最大运行时长 {config.AGENT_MAX_RUNTIME}s")
                 break
             if fails >= config.AGENT_MAX_CONSECUTIVE_FAILURES:
@@ -188,6 +212,8 @@ def agent_loop() -> None:
                         runtime,
                     )
                 if revised is None:
+                    stop_reason = "failed"
+                    stop_detail = f"连续失败 {fails} 次"
                     _append_event("error", f"连续失败 {fails} 次，停止自愈")
                     break
                 plan = revised
@@ -213,6 +239,8 @@ def agent_loop() -> None:
             try:
                 messages = context.build(system_prompt, runtime=runtime)["messages"]
             except Exception as exc:  # noqa: BLE001
+                stop_reason = "context_error"
+                stop_detail = f"{type(exc).__name__}: {exc}"
                 _append_event("error", f"组装 messages 失败: {exc}")
                 break
 
@@ -268,6 +296,7 @@ def agent_loop() -> None:
                         runtime,
                     )
                 if revised is None:
+                    stop_reason = "repeated_action"
                     _append_event("error", "连续 3 次相同动作，强制终止")
                     break
                 plan = revised
@@ -280,6 +309,7 @@ def agent_loop() -> None:
 
             if name == "done":
                 if plan is None:
+                    stop_reason = "done"
                     _append_event("done", str(action.get("message", "")))
                     session.persist()
                     break
@@ -288,11 +318,14 @@ def agent_loop() -> None:
                     planning.start_verification(plan)
                     verification = planning.verify_plan(plan)
                 except Exception as exc:  # noqa: BLE001
+                    stop_reason = "verification_error"
+                    stop_detail = f"{type(exc).__name__}: {exc}"
                     _append_event("error", f"验收异常: {type(exc).__name__}: {exc}")
                     planning.fail(plan, f"验收异常: {exc}")
                     break
                 if verification.get("ok"):
                     planning.complete(plan)
+                    stop_reason = "done"
                     _append_event("done", str(action.get("message", "")))
                     session.persist()
                     break
@@ -300,6 +333,8 @@ def agent_loop() -> None:
                 _append_event("warn", "验收失败：" + feedback)
                 revised = _replan(plan, "验收失败：\n" + feedback, runtime)
                 if revised is None:
+                    stop_reason = "verification_failed"
+                    stop_detail = feedback[:300]
                     planning.fail(plan, "验收失败且无法重规划")
                     _append_event("error", "验收失败且无法重规划")
                     break
@@ -356,14 +391,19 @@ def agent_loop() -> None:
                 _append_event("error", f"写结果失败: {exc}")
 
             if session.is_cancelled():
+                stop_reason = "cancelled"
                 _append_event("info", "任务被用户取消")
                 break
 
-        if steps >= config.AGENT_MAX_STEPS:
+        if steps >= config.AGENT_MAX_STEPS and stop_reason == "unknown":
+            stop_reason = "max_steps"
+            stop_detail = f"{config.AGENT_MAX_STEPS} 步"
             _append_event("info", f"达到最大步数 {config.AGENT_MAX_STEPS}，计划保留，可继续")
     except Exception as exc:  # noqa: BLE001
         import traceback
 
+        stop_reason = "fatal"
+        stop_detail = f"{type(exc).__name__}: {exc}"
         _append_event("error", f"agent_loop 致命异常: {type(exc).__name__}: {exc}")
         try:
             session.append_history(
@@ -384,9 +424,29 @@ def agent_loop() -> None:
             except Exception:  # noqa: BLE001
                 pass
     finally:
+        # 收尾步骤彼此隔离：任何一步失败都不能阻止 idle 状态和终态事件。
         try:
             session.set_status("idle")
-            session.clear_cancel()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            session.reset_cancel()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            session.set_last_stop(stop_reason, stop_detail)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            # set_status 本身不会触发 SSE；追加一条终态事件，让前端立即收到 idle。
+            session.add_event(
+                "status",
+                "任务结束：" + _stop_label(stop_reason),
+                reason=stop_reason,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             session.persist()
         except Exception:  # noqa: BLE001
             pass

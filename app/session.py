@@ -274,6 +274,26 @@ class Session:
             self.status = status
         self._save_session()
 
+    def set_last_stop(self, reason: str, detail: str = "") -> None:
+        """记录本次运行结束原因，并随 task_state 持久化。"""
+        with self.lock:
+            state = dict(self.task_state or {})
+            if reason:
+                state["last_stop"] = {
+                    "reason": reason,
+                    "detail": detail or "",
+                    "at": time.time(),
+                }
+            else:
+                state.pop("last_stop", None)
+            self.task_state = state
+        self._save_session()
+
+    def get_last_stop(self) -> Dict[str, Any]:
+        with self.lock:
+            value = (self.task_state or {}).get("last_stop")
+            return dict(value) if isinstance(value, dict) else {}
+
     def request_cancel(self) -> None:
         with self.lock:
             self.cancel_flag = True
@@ -299,6 +319,7 @@ class Session:
     def snapshot(self, since: int = 0) -> Dict[str, Any]:
         with self.lock:
             events = self.events[since:] if since >= 0 else self.events
+            last_stop = (self.task_state or {}).get("last_stop")
             return {
                 "status": self.status,
                 "history": list(self.history),
@@ -307,6 +328,7 @@ class Session:
                 "last_event_id": self.events[-1].get("id", 0) if self.events else 0,
                 "conv_id": self.conv_id,
                 "task": self.task,
+                "last_stop": dict(last_stop) if isinstance(last_stop, dict) else {},
             }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -463,6 +485,14 @@ def set_status(status: str) -> None:
     _default.set_status(status)
 
 
+def set_last_stop(reason: str, detail: str = "") -> None:
+    _default.set_last_stop(reason, detail)
+
+
+def get_last_stop() -> Dict[str, Any]:
+    return _default.get_last_stop()
+
+
 def is_cancelled() -> bool:
     return _default.is_cancelled()
 
@@ -472,6 +502,10 @@ def request_cancel() -> None:
 
 
 def clear_cancel() -> None:
+    _default.reset_cancel()
+
+
+def reset_cancel() -> None:
     _default.reset_cancel()
 
 

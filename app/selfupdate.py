@@ -97,6 +97,13 @@ def _write_restart_log(ts: str, reason: str) -> None:
 
 
 def _exec_restart() -> None:
+    # execv 会继承当前环境；先重新读取 .env，避免改完配置后自我重启仍用旧值。
+    try:
+        from app.env import load_dotenv
+
+        load_dotenv(override=True)
+    except Exception:  # noqa: BLE001
+        pass
     os.execv(
         sys.executable,
         [sys.executable, "-m", "app.main"],

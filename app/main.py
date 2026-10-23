@@ -52,6 +52,14 @@ def index() -> FileResponse:
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
+@app.get("/favicon.svg", include_in_schema=False)
+def favicon() -> FileResponse:
+    return FileResponse(
+        os.path.join(STATIC_DIR, "favicon.svg"),
+        media_type="image/svg+xml",
+    )
+
+
 @app.get("/api/version")
 def api_version() -> JSONResponse:
     return JSONResponse({"name": "agent-services", "version": VERSION, "channel": CHANNEL})
@@ -94,6 +102,7 @@ def api_state(since: int = 0, since_id: Optional[int] = None) -> JSONResponse:
             "task": session.get_task(),
             "plan": (session.get_task_state() or {}).get("plan"),
             "plan_text": (session.get_task_state() or {}).get("plan_text", ""),
+            "last_stop": session.get_last_stop(),
         }
     )
 
@@ -197,6 +206,12 @@ async def api_chat(request: Request) -> JSONResponse:
     else:
         session.append_history("user", prompt)
 
+    if mode in ("task", "continuation"):
+        try:
+            session.set_last_stop("", "")
+        except Exception:  # noqa: BLE001
+            pass
+
     if mode == "task":
         old_task = (session.get_task() or "").strip()
         new_task = prompt.strip()
@@ -228,7 +243,6 @@ async def api_chat(request: Request) -> JSONResponse:
         except Exception as e:
             session.add_event("error", f"chat 失败: {e}")
             session.append_history("assistant", f"[error] {e}")
-        session.set_status("idle")
         session.persist()
         return JSONResponse({"mode": "chat", "ok": True})
 

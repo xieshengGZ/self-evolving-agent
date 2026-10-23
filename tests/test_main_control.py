@@ -5,6 +5,14 @@ from app import main, session
 AUTH = {"Authorization": "Bearer test-token"}
 
 
+def test_favicon_is_served():
+    client = TestClient(main.app)
+    response = client.get("/favicon.svg")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+    assert b"<svg" in response.content
+
+
 def test_control_works_while_agent_is_running():
     client = TestClient(main.app)
     session.set_status("running")

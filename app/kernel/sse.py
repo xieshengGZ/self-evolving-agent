@@ -34,6 +34,7 @@ def state_payload() -> Dict[str, Any]:
         "last_event_id": session.last_event_id(),
         "conv_id": session.get_conv_id(),
         "task": session.get_task(),
+        "last_stop": session.get_last_stop(),
     }
 
 

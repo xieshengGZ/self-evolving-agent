@@ -7,7 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def load_dotenv() -> None:
+def load_dotenv(*, override: bool = False) -> None:
+    """读取仓库根目录 .env；override=True 用于进程内重启前刷新配置。"""
     env_path = ROOT / ".env"
     if not env_path.is_file():
         return
@@ -16,4 +17,7 @@ def load_dotenv() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if override or key not in os.environ:
+            os.environ[key] = value

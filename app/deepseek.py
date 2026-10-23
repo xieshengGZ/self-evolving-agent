@@ -71,8 +71,11 @@ def _redact(text: str) -> str:
     return text
 
 
-def _complete(messages: list[dict[str, str]]) -> str:
-    """调用 DeepSeek chat completions，返回原始文本并记录用量。"""
+def _complete(messages: list[dict[str, str]], *, json_mode: bool = False) -> str:
+    """调用 DeepSeek chat completions，返回原始文本并记录用量。
+
+    动作调用启用 JSON Output，减少模型输出解释文字或 markdown 围栏导致的解析失败。
+    """
     url = config.DEEPSEEK_BASE_URL.rstrip("/") + "/chat/completions"
     headers = {
         "Authorization": f"Bearer {config.DEEPSEEK_API_KEY}",
@@ -84,6 +87,8 @@ def _complete(messages: list[dict[str, str]]) -> str:
         "temperature": 0.2,
         "stream": False,
     }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
 
     try:
         with httpx.Client(timeout=config.AGENT_CMD_TIMEOUT) as client:
@@ -92,6 +97,9 @@ def _complete(messages: list[dict[str, str]]) -> str:
         raise DeepSeekError(f"请求 DeepSeek 失败: {_redact(str(exc))}") from exc
 
     if resp.status_code != 200:
+        # 兼容不支持 response_format 的 OpenAI 兼容端点：退回普通文本模式重试一次。
+        if json_mode and resp.status_code in (400, 422):
+            return _complete(messages, json_mode=False)
         body = _redact(resp.text[:1000])
         raise DeepSeekError(f"DeepSeek 返回 HTTP {resp.status_code}: {body}")
 
@@ -125,5 +133,9 @@ def chat_text(messages: list[dict[str, str]]) -> str:
 
 
 def chat(messages: list[dict[str, str]]) -> dict[str, Any]:
-    """动作模式：从回复中提取单个 JSON 动作。"""
-    return _extract_json(_complete(messages))
+    """动作模式：启用 JSON Output，并提取单个 JSON 动作。"""
+    raw = _complete(messages, json_mode=True)
+    # DeepSeek 文档提示 JSON Output 偶尔可能返回空 content，退回普通模式再试一次。
+    if not raw.strip():
+        raw = _complete(messages, json_mode=False)
+    return _extract_json(raw)

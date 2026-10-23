@@ -27,3 +27,4 @@ def test_version_endpoint_and_state_expose_version():
     )
     assert state.status_code == 200
     assert state.json()["version"] == "1.2.0"
+    assert "last_stop" in state.json()

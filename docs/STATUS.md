@@ -54,7 +54,7 @@
 
 ## 最近验证
 
-- 2026-10-22：`make check` **56 passed**；`compileall` 通过。
+- 2026-10-23：`make check` **59 passed**；长任务终态/停止原因、JSON Output、favicon 已上线。
 - 上下文单测：预算保留/丢弃、压力触发 `context.compress`、fallback、artifact 卸载、真实 context 插件。
 - 临时根目录 E2E：8 插件加载；`/api/context` 返回 sections/ledger，预算 500 时 system 超预算后正确丢弃可选段。
 - 线上回归：重启后 8 插件加载；原句与“什么时候…”均返回 `mode=chat`，计划 id 未变化，无新 plan 事件。
