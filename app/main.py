@@ -255,6 +255,29 @@ def _has_pending_work() -> bool:
     return plan.status not in ("done", "failed", "cancelled")
 
 
+def _last_task_prompt(prompt: str) -> str:
+    """Recover the latest concrete task when the user explicitly forces task mode."""
+    try:
+        history = session.get_history()
+    except Exception:  # noqa: BLE001
+        return ""
+    checked = 0
+    for item in reversed(history):
+        if item.get("role") != "user":
+            continue
+        text = str(item.get("content") or "").strip()
+        if not text or text == prompt.strip():
+            continue
+        if text.startswith("{") or _looks_like_action_payload(text):
+            continue
+        checked += 1
+        if checked > 20:
+            break
+        if classifier.classify_rules(text) == "task":
+            return text
+    return ""
+
+
 def _last_confirmed_task(prompt: str) -> str:
     """Recover the task when the assistant asked "shall I continue?" and the
     user answers with a short confirmation such as "开始".
@@ -330,7 +353,7 @@ async def api_chat(request: Request) -> JSONResponse:
         mode = forced
         route = {"mode": mode, "source": "client", "reason": "manual-override"}
         if mode == "task" and original_mode == "continuation":
-            candidate = _last_confirmed_task(prompt)
+            candidate = _last_confirmed_task(prompt) or _last_task_prompt(prompt)
             if candidate:
                 resume_task = candidate
     elif mode == "continuation" and not _has_pending_work():
@@ -427,7 +450,11 @@ async def api_chat(request: Request) -> JSONResponse:
     session.clear_cancel()
     session.persist()
 
-    thread = threading.Thread(target=agent_loop, daemon=True)
+    thread = threading.Thread(
+        target=agent_loop,
+        kwargs={"task_mode": forced == "task"},
+        daemon=True,
+    )
     thread.start()
     return JSONResponse({"mode": mode, "ok": True, "status": "running"})
 

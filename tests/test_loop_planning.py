@@ -156,3 +156,34 @@ def test_no_tool_failures_fall_back_to_chat(monkeypatch, tmp_path):
     assert local_session.get_status() == "idle"
     assert local_session.get_last_stop()["reason"] == "chat_fallback"
     assert local_session.history[-1] == {"role": "assistant", "content": "兜底回答"}
+
+
+def test_explicit_task_mode_empty_plan_reports_task_mode(monkeypatch, tmp_path):
+    local_session, db = _local_session(tmp_path, "你现在是什么模式？")
+    runtime = FakeRuntime(EmptyPlanner())
+
+    monkeypatch.setattr(loop_mod, "session", local_session)
+    monkeypatch.setattr(planning, "session", local_session)
+    monkeypatch.setattr(planning, "_audit_storage", lambda: db)
+    monkeypatch.setattr(loop_mod, "get_runtime", lambda: runtime)
+    monkeypatch.setattr(
+        loop_mod.deepseek,
+        "chat_text",
+        lambda messages: (_ for _ in ()).throw(AssertionError("must not chat fallback")),
+    )
+    monkeypatch.setattr(
+        loop_mod.deepseek,
+        "chat",
+        lambda messages: (_ for _ in ()).throw(AssertionError("must not run loop")),
+    )
+
+    loop_mod.agent_loop(task_mode=True)
+
+    assert local_session.get_status() == "idle"
+    assert local_session.get_last_stop()["reason"] == "task_no_plan"
+    assert "当前是任务模式" in local_session.history[-1]["content"]
+    assert "对话模式" not in local_session.history[-1]["content"]
+    assert not any(
+        event["kind"] == "warn" and "回退为聊天" in event["message"]
+        for event in local_session.events
+    )

@@ -38,6 +38,7 @@ STOP_LABELS = {
     "fatal": "异常结束",
     "chat_fallback": "回退聊天答复",
     "chat_fallback_failed": "回退聊天失败",
+    "task_no_plan": "任务无法规划",
     "unknown": "结束",
 }
 
@@ -213,8 +214,12 @@ def _replan(plan: planning.Plan, feedback: str, runtime: Any) -> Optional[planni
         return None
 
 
-def agent_loop() -> None:
-    """自愈循环：每步 try/except，失败转 error 回传模型，有硬性上限。"""
+def agent_loop(task_mode: bool = False) -> None:
+    """自愈循环：每步 try/except，失败转 error 回传模型，有硬性上限。
+
+    task_mode 表示用户显式选择了任务模式。此时规划失败不能再伪装成
+    对话模式，否则会误导用户以为模式切换没有生效。
+    """
     runtime = get_runtime()
     steps = 0
     plan, plan_error = _start_plan(runtime)
@@ -240,10 +245,22 @@ def agent_loop() -> None:
 
     try:
         if plan_error:
-            stop_reason = "chat_fallback"
             stop_detail = plan_error[:300]
-            if not _chat_fallback(runtime, plan_error):
-                stop_reason = "chat_fallback_failed"
+            if task_mode:
+                stop_reason = "task_no_plan"
+                reply = (
+                    "当前是任务模式，但规划器没有为这个请求生成可执行步骤"
+                    f"（{plan_error[:200]}）。请给出具体任务，例如查看/修改文件或运行命令；"
+                    "如果是确认继续，请重发具体任务描述。"
+                )
+                session.append_history("assistant", reply)
+                _append_event("assistant", reply)
+                _append_event("done", reply)
+                session.persist()
+            else:
+                stop_reason = "chat_fallback"
+                if not _chat_fallback(runtime, plan_error):
+                    stop_reason = "chat_fallback_failed"
             return
 
         while steps < config.AGENT_MAX_STEPS:

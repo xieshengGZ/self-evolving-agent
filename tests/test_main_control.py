@@ -121,7 +121,7 @@ def test_start_resumes_confirmed_task(monkeypatch):
     monkeypatch.setattr(main, "_has_pending_work", lambda: False)
     monkeypatch.setattr(main, "_last_confirmed_task", lambda prompt: "先修 1，改动前先提交 github。")
     started = {}
-    monkeypatch.setattr(main, "agent_loop", lambda: started.setdefault("called", True))
+    monkeypatch.setattr(main, "agent_loop", lambda **kwargs: started.setdefault("called", True))
 
     response = client.post("/api/chat", json={"prompt": "开始"}, headers=AUTH)
     assert response.status_code == 200
@@ -142,7 +142,7 @@ def test_manual_task_mode_overrides_chat_route(monkeypatch):
     client = TestClient(main.app)
     session.new_conversation("")
     session.set_status("idle")
-    monkeypatch.setattr(main, "agent_loop", lambda: None)
+    monkeypatch.setattr(main, "agent_loop", lambda **kwargs: None)
 
     response = client.post(
         "/api/chat",
@@ -175,3 +175,29 @@ def test_manual_chat_mode_overrides_task_route(monkeypatch):
     assert response.status_code == 200
     assert response.json()["mode"] == "chat"
     assert session.get_task() == ""
+
+
+def test_manual_task_start_resumes_latest_concrete_task(monkeypatch):
+    client = TestClient(main.app)
+    session.new_conversation("")
+    session.append_history("user", "修改 stop 超时的问题")
+    session.append_history("assistant", "好的，稍后处理。")
+    session.set_status("idle")
+    monkeypatch.setattr(main, "_has_pending_work", lambda: False)
+    started = {}
+    monkeypatch.setattr(
+        main,
+        "agent_loop",
+        lambda **kwargs: started.update(kwargs),
+    )
+
+    response = client.post(
+        "/api/chat",
+        json={"prompt": "开始", "mode": "task"},
+        headers=AUTH,
+    )
+    assert response.status_code == 200
+    assert response.json()["mode"] == "task"
+    assert session.get_task() == "修改 stop 超时的问题"
+    assert started.get("task_mode") is True
+    session.set_status("idle")
