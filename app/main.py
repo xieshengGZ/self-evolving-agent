@@ -316,10 +316,24 @@ async def api_chat(request: Request) -> JSONResponse:
     if not isinstance(prompt, str) or not prompt.strip():
         raise HTTPException(status_code=400, detail="prompt required")
 
+    forced = str((body or {}).get("mode") or "").strip().lower()
+    if forced == "auto":
+        forced = ""
+    if forced not in ("", "chat", "task"):
+        raise HTTPException(status_code=400, detail="mode must be auto, chat, or task")
+
     route = classifier.explain(prompt)
     mode = route["mode"]
     resume_task = ""
-    if mode == "continuation" and not _has_pending_work():
+    if forced and mode != "control":
+        original_mode = mode
+        mode = forced
+        route = {"mode": mode, "source": "client", "reason": "manual-override"}
+        if mode == "task" and original_mode == "continuation":
+            candidate = _last_confirmed_task(prompt)
+            if candidate:
+                resume_task = candidate
+    elif mode == "continuation" and not _has_pending_work():
         candidate = _last_confirmed_task(prompt)
         if candidate:
             resume_task = candidate

@@ -128,3 +128,50 @@ def test_start_resumes_confirmed_task(monkeypatch):
     assert response.json()["mode"] == "task"
     assert session.get_task() == "先修 1，改动前先提交 github。"
     session.set_status("idle")
+
+
+def test_index_has_manual_mode_selector():
+    client = TestClient(main.app)
+    html = client.get("/").text
+    assert 'id="mode"' in html
+    assert 'value="task"' in html
+    assert 'value="chat"' in html
+
+
+def test_manual_task_mode_overrides_chat_route(monkeypatch):
+    client = TestClient(main.app)
+    session.new_conversation("")
+    session.set_status("idle")
+    monkeypatch.setattr(main, "agent_loop", lambda: None)
+
+    response = client.post(
+        "/api/chat",
+        json={"prompt": "分析一下 SSE 是怎么实现的", "mode": "task"},
+        headers=AUTH,
+    )
+    assert response.status_code == 200
+    assert response.json()["mode"] == "task"
+    assert session.get_task() == "分析一下 SSE 是怎么实现的"
+    session.set_status("idle")
+
+
+def test_manual_chat_mode_overrides_task_route(monkeypatch):
+    client = TestClient(main.app)
+    session.new_conversation("")
+    session.set_status("idle")
+    monkeypatch.setattr(main, "load_chat_prompt", lambda: "CHAT_PROMPT_ONLY")
+    monkeypatch.setattr(
+        main.context,
+        "build",
+        lambda prompt, runtime=None: {"messages": [{"role": "system", "content": prompt}]},
+    )
+    monkeypatch.setattr(main.deepseek, "chat_text", lambda messages: "只回答，不执行")
+
+    response = client.post(
+        "/api/chat",
+        json={"prompt": "查看当前目录", "mode": "chat"},
+        headers=AUTH,
+    )
+    assert response.status_code == 200
+    assert response.json()["mode"] == "chat"
+    assert session.get_task() == ""

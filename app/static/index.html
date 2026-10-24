@@ -336,6 +336,10 @@
   }
   #prompt:focus { border-color: #3b82f6; }
   .footer-btns { display: flex; flex-direction: column; gap: 6px; }
+  .footer-btns select {
+    background: #0f1115; color: #e6e6e6; border: 1px solid #2c3340;
+    border-radius: 8px; padding: 6px 8px; font-size: 12px;
+  }
   .hint { font-size: 11px; color: #6b7280; }
   .err { color: #f87171; }
   @media (max-width: 800px) {
@@ -383,6 +387,11 @@
 <footer>
   <textarea id="prompt" placeholder="输入指令，例如：查看当前目录，列出 python 进程（Ctrl+Enter 发送）"></textarea>
   <div class="footer-btns">
+    <select id="mode" title="自动判断：按内容路由；任务：强制执行工具；对话：只回答不执行">
+      <option value="auto">自动判断</option>
+      <option value="chat">对话模式</option>
+      <option value="task">任务模式</option>
+    </select>
     <button id="sendBtn">发送</button>
     <span class="hint">Ctrl+Enter</span>
   </div>
@@ -393,6 +402,7 @@
   "use strict";
 
   var TOKEN_KEY = "agent_web_token";
+  var MODE_KEY = "agent_input_mode";
   var COLLAPSE_CHARS = 1200;
 
   var state = {
@@ -414,6 +424,7 @@
     history: document.getElementById("history"),
     events: document.getElementById("events"),
     prompt: document.getElementById("prompt"),
+    mode: document.getElementById("mode"),
     sendBtn: document.getElementById("sendBtn"),
     stopBtn: document.getElementById("stopBtn"),
     restartBtn: document.getElementById("restartBtn"),
@@ -773,7 +784,9 @@
     if (!getToken()) { setHint("请先填写 Token", true); return; }
     state.sending = true;
     el.sendBtn.disabled = true;
-    postJSON("/api/chat", { prompt: text })
+    var body = { prompt: text };
+    if (el.mode && el.mode.value !== "auto") body.mode = el.mode.value;
+    postJSON("/api/chat", body)
       .then(function () {
         el.prompt.value = "";
         setHint("已发送");
@@ -983,6 +996,10 @@
 
   function init() {
     loadToken();
+    try { el.mode.value = localStorage.getItem(MODE_KEY) || "auto"; } catch (e) {}
+    el.mode.addEventListener("change", function () {
+      try { localStorage.setItem(MODE_KEY, el.mode.value); } catch (e) {}
+    });
     bind();
     renderStatus("unknown");
     connectEvents();
