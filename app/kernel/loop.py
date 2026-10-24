@@ -129,6 +129,31 @@ def _action_problem(action: Dict[str, Any], runtime: Any) -> Optional[str]:
     return None
 
 
+def _plan_action_problem(plan: Any, action: Dict[str, Any]) -> Optional[str]:
+    """Reject actions that skip the current plan step.
+
+    The model is allowed to finish early with `done`, but otherwise it must
+    execute the action type required by the active step. Without this guard a
+    plan ending in `write_file` can stall while the model keeps running shell
+    commands until it hits the step cap.
+    """
+    if plan is None:
+        return None
+    step = plan.current_step()
+    if step is None:
+        return None
+    expected = str(getattr(step, "action", "") or "")
+    actual = str((action or {}).get("action") or "")
+    if actual == "done" or not expected or expected in ("*", "any"):
+        return None
+    if actual != expected:
+        return (
+            f"当前计划步骤 {step.id} 要求执行 {expected}，但收到 {actual}。"
+            "不要继续探索其他操作，请立即执行当前步骤。"
+        )
+    return None
+
+
 def _append_event(kind: str, message: str) -> None:
     session.add_event(kind, message)
 
@@ -386,6 +411,11 @@ def agent_loop(task_mode: bool = False) -> None:
                 _fail(problem)
                 continue
             problem = _action_problem(action, runtime)
+            if problem:
+                fails += 1
+                _fail(problem)
+                continue
+            problem = _plan_action_problem(plan, action)
             if problem:
                 fails += 1
                 _fail(problem)

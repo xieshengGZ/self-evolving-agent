@@ -23,7 +23,7 @@
 - P0：classifier 识别是什么/为什么/什么时候/区别等概念问题为 chat，并防止插件误判为 task；显式写/查看/修复仍为 task
 - P0：planning prompt 禁止为用户未要求的交付物发明验收；loop 对缺失/未知 action 给定向修复提示
 - P0：chat 模式改用 `chat_text()` 返回原始文本，避免答案中的 JSON 被当作动作；测试统一覆盖环境变量
-- 2026-10-23：路由系统化：默认 chat、单一规则源、代码库分析转 task、确认语恢复任务、页面手动模式、显式任务模式规划失败不再伪装对话、计划完成自动验收、对话拦截动作 JSON、规划/协议失败回退、Pydantic Action、JSON repair、route 事件
+- 2026-10-23：路由系统化：默认 chat、单一规则源、代码库分析转 task、确认语恢复任务、页面手动模式、显式任务模式规划失败不再伪装对话、计划完成自动验收、跳过当前计划步骤的动作会被拒绝、对话拦截动作 JSON、规划/协议失败回退、Pydantic Action、JSON repair、route 事件
 
 ## 已知问题
 
@@ -54,7 +54,7 @@
 | `hello` | 0.1.0 | experimental | 热加载演示 |
 
 ## 最近验证
-- 2026-10-23：`make check` **104 passed**；路由/规划门禁/协议修复/聊天兜底、长任务终态、JSON Output、favicon 已上线。
+- 2026-10-23：`make check` **105 passed**；路由/规划门禁/协议修复/聊天兜底、长任务终态、JSON Output、favicon 已上线。
 - 上下文单测：预算保留/丢弃、压力触发 `context.compress`、fallback、artifact 卸载、真实 context 插件。
 - 临时根目录 E2E：8 插件加载；`/api/context` 返回 sections/ledger，预算 500 时 system 超预算后正确丢弃可选段。
 - 线上回归：自重启后 8 插件加载；`route` 事件显示 `mode=control source=plugin`，favicon.svg/ico/png 返回 200。

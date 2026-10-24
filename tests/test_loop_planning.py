@@ -219,3 +219,13 @@ def test_completed_plan_is_verified_without_extra_model_steps(monkeypatch, tmp_p
         event["kind"] == "info" and "自动验收" in event["message"]
         for event in local_session.events
     )
+
+
+def test_plan_action_problem_rejects_skipping_current_step():
+    step = SimpleNamespace(id=6, action="write_file")
+    plan = SimpleNamespace(current_step=lambda: step)
+
+    problem = loop_mod._plan_action_problem(plan, {"action": "shell"})
+    assert problem and "write_file" in problem
+    assert loop_mod._plan_action_problem(plan, {"action": "write_file"}) is None
+    assert loop_mod._plan_action_problem(plan, {"action": "done"}) is None
