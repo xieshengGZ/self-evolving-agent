@@ -187,3 +187,35 @@ def test_explicit_task_mode_empty_plan_reports_task_mode(monkeypatch, tmp_path):
         event["kind"] == "warn" and "回退为聊天" in event["message"]
         for event in local_session.events
     )
+
+
+def test_completed_plan_is_verified_without_extra_model_steps(monkeypatch, tmp_path):
+    target = tmp_path / "done.txt"
+    target.write_text("ok", encoding="utf-8")
+
+    local_session, db = _local_session(tmp_path, "run a tiny task")
+    planner = FakePlanner()
+    planner.target = str(target)
+    runtime = FakeRuntime(planner)
+    calls = {"n": 0}
+
+    def fake_chat(messages):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise AssertionError("model must not run after all plan steps are done")
+        return {"action": "shell", "command": "true"}
+
+    monkeypatch.setattr(loop_mod, "session", local_session)
+    monkeypatch.setattr(planning, "session", local_session)
+    monkeypatch.setattr(planning, "_audit_storage", lambda: db)
+    monkeypatch.setattr(loop_mod, "get_runtime", lambda: runtime)
+    monkeypatch.setattr(loop_mod.deepseek, "chat", fake_chat)
+
+    loop_mod.agent_loop()
+
+    assert calls["n"] == 1
+    assert local_session.get_last_stop()["reason"] == "done"
+    assert any(
+        event["kind"] == "info" and "自动验收" in event["message"]
+        for event in local_session.events
+    )

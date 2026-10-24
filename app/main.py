@@ -1,4 +1,5 @@
 import os
+import re
 import threading
 from typing import Optional
 
@@ -255,6 +256,16 @@ def _has_pending_work() -> bool:
     return plan.status not in ("done", "failed", "cancelled")
 
 
+_MODE_PREFIX_RE = re.compile(
+    r"^\s*(?:请)?(?:切(?:换|到)?|进入|用)(?:任务|对话|聊天|自动)(?:模式)?\s*[.。:：,，;；\s]+",
+    re.I,
+)
+
+
+def _strip_mode_prefix(text: str) -> str:
+    return _MODE_PREFIX_RE.sub("", text, count=1).strip()
+
+
 def _last_task_prompt(prompt: str) -> str:
     """Recover the latest concrete task when the user explicitly forces task mode."""
     try:
@@ -265,7 +276,7 @@ def _last_task_prompt(prompt: str) -> str:
     for item in reversed(history):
         if item.get("role") != "user":
             continue
-        text = str(item.get("content") or "").strip()
+        text = _strip_mode_prefix(str(item.get("content") or "").strip())
         if not text or text == prompt.strip():
             continue
         if text.startswith("{") or _looks_like_action_payload(text):
@@ -300,7 +311,7 @@ def _last_confirmed_task(prompt: str) -> str:
     for item in reversed(history):
         if item.get("role") != "user":
             continue
-        text = str(item.get("content") or "").strip()
+        text = _strip_mode_prefix(str(item.get("content") or "").strip())
         if not text or text == prompt.strip():
             continue
         checked += 1

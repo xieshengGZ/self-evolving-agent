@@ -273,6 +273,37 @@ def agent_loop(task_mode: bool = False) -> None:
                 stop_detail = f"{config.AGENT_MAX_RUNTIME}s"
                 _append_event("error", f"超过最大运行时长 {config.AGENT_MAX_RUNTIME}s")
                 break
+            if plan is not None and plan.pending_count() == 0:
+                _append_event("info", "计划步骤已全部完成，自动验收")
+                try:
+                    planning.start_verification(plan)
+                    verification = planning.verify_plan(plan)
+                except Exception as exc:  # noqa: BLE001
+                    stop_reason = "verification_error"
+                    stop_detail = f"{type(exc).__name__}: {exc}"
+                    _append_event("error", f"验收异常: {type(exc).__name__}: {exc}")
+                    planning.fail(plan, f"验收异常: {exc}")
+                    break
+                if verification.get("ok"):
+                    planning.complete(plan)
+                    stop_reason = "done"
+                    _append_event("done", "计划步骤全部完成并通过验收")
+                    session.persist()
+                    break
+                feedback = planning.verification_feedback(verification)
+                _append_event("warn", "验收失败：" + feedback)
+                revised = _replan(plan, "验收失败：\n" + feedback, runtime)
+                if revised is None:
+                    stop_reason = "verification_failed"
+                    stop_detail = feedback[:300]
+                    planning.fail(plan, "验收失败且无法重规划")
+                    _append_event("error", "验收失败且无法重规划")
+                    break
+                plan = revised
+                fails = 0
+                last_action_str = ""
+                repeat_count = 0
+                continue
             if fails >= config.AGENT_MAX_CONSECUTIVE_FAILURES:
                 revised = None
                 if plan is not None:

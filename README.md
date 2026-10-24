@@ -126,7 +126,7 @@ Read [SECURITY.md](SECURITY.md) before deploying.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
-make check                 # compileall + 102 tests
+make check                 # compileall + 104 tests
 .venv/bin/python -m app.cli status
 .venv/bin/python -m app.cli map
 ```

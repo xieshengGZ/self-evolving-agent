@@ -201,3 +201,13 @@ def test_manual_task_start_resumes_latest_concrete_task(monkeypatch):
     assert session.get_task() == "修改 stop 超时的问题"
     assert started.get("task_mode") is True
     session.set_status("idle")
+
+
+def test_last_task_prompt_strips_mode_prefix(monkeypatch):
+    history = [
+        {"role": "user", "content": "先修 1（影响用户体验，改动最小）。"},
+        {"role": "user", "content": "切任务模式.修改stop超时的问题"},
+        {"role": "assistant", "content": "好的。"},
+    ]
+    monkeypatch.setattr(main.session, "get_history", lambda: history)
+    assert main._last_task_prompt("开始") == "修改stop超时的问题"
